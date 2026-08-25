@@ -118,6 +118,8 @@ test.describe('Account Withdrawal', () => {
 
     test('Should be able to withdraw an account if User is in Paid Plan.', async ({ page }) => {
         test.setTimeout(150000);
+
+        //should be new user every time
         const withdrawnEmail = "l.l.a.nfairpwllgwyngy.llgoger111@gmail.com";
         const withdrawnPassword = "qwert6y7u";
 

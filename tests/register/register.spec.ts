@@ -40,13 +40,9 @@ test('register', async ({ page }) => {
     let EMAIL_VERIFICATION_URL = '';
 
     //move the dot since register only accepts a unique email
-<<<<<<< Updated upstream
     //new email every test;must not be a registered email
-    const EMAIL = `l.l.a.nfairpwllgwyngyll.goger111@gmail.com`
-=======
     // hippopotomonstrosesquip123@gmail.com
     const EMAIL = `h.ippopotomonstrosesquip123@gmail.com`
->>>>>>> Stashed changes
 
     const passwordFields = page.locator('input[type="password"]');
 

@@ -6,7 +6,7 @@ import { google } from 'googleapis';
 const __dirname = path.resolve();
 const SCOPES = ['https://www.googleapis.com/auth/gmail.readonly'];
 const TOKEN_PATH = path.join(__dirname, 'token.json');
-const CREDENTIALS_PATH = path.join(__dirname, '../epose-poc/credentials/credentials.json');
+const CREDENTIALS_PATH = path.join(__dirname, '../ePose/credentials/credentials.json');
 
 async function loadSavedCredentialsIfExist() {
     try {

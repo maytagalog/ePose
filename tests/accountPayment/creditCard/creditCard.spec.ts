@@ -5,6 +5,8 @@ import moment from 'moment';
 test('credit card payment - 3 months', async ({ page }) => {
     test.setTimeout(350000);
     //must be a new user or user's subscription already ended
+    
+    //new email every test
     await login(page, { email: "l.l.a.nfairpwllgwyngyl.lgoger111@gmail.com", password: "qwert6y7u" });
     await page.waitForTimeout(3000)
     await expect(page.getByRole('img', { name: 'Menu' })).toBeVisible()

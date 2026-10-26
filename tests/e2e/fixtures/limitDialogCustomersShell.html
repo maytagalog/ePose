@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>Limit Dialog customers shell fixture</title>
+  <style>
+    #generic-unrelated-dialog[hidden] { display: none !important; }
+    #limit-dialog-root[hidden] { display: none !important; }
+    #customer-detail-panel[hidden] { display: none !important; }
+    .btn-label { display: inline-block; padding: 4px 8px; border: 1px solid #ccc; }
+    .customer-record-row { cursor: pointer; padding: 4px 0; display: flex; flex-direction: row; gap: 8px; }
+    .customer-record-text-col { display: flex; flex-direction: column; gap: 2px; }
+  </style>
+</head>
+<body>
+  <main role="main">
+    <button type="button" class="btn-label">新規登録</button>
+    <a href="#" id="plan-change-link">プラン変更はこちら</a>
+    <button type="button" id="quick-analysis">クイック分析</button>
+
+    <div id="phonebook-outer-wrap">
+      <div class="phonebook-mid-wrap">
+        <div class="phonebook-inner-wrap">
+          <div role="tablist" aria-label="Alphabet filters">
+            <button type="button" role="tab" id="alphabet-tab-a">A</button>
+            <button type="button" role="tab" id="alphabet-tab-a-kana">あ</button>
+          </div>
+          <div id="phonebook-list-wrapper">
+            <div id="phonebook-set-loading" hidden></div>
+            <div id="phonebook-set-あ">
+              <p>あ</p>
+              <div>
+                <div>
+                  <div
+                    class="customer-record-row"
+                    data-customer-id="11111111-1111-4111-8111-111111111111"
+                  >
+                    <div>
+                      <img alt="Profile face" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" width="24" height="24" />
+                    </div>
+                    <div class="customer-record-text-col">
+                      <div>Fixture Customer First</div>
+                      <div>フィクスチャファースト</div>
+                      <div>
+                        <img alt="User Icon" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" width="16" height="16" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div id="phonebook-set-い">
+              <p>い</p>
+              <div>
+                <div>
+                  <div
+                    class="customer-record-row"
+                    data-customer-id="22222222-2222-4222-8222-222222222222"
+                  >
+                    <div>
+                      <img alt="Profile face" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" width="24" height="24" />
+                    </div>
+                    <div class="customer-record-text-col">
+                      <div>Fixture Customer Second</div>
+                      <div>フィクスチャセカンド</div>
+                      <div>
+                        <img alt="User Icon" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" width="16" height="16" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="customer-detail-panel" hidden>
+      <h3 id="detail-heading"></h3>
+      <button type="button" id="new-analysis">新規分析</button>
+    </div>
+  </main>
+
+  <div id="generic-unrelated-dialog" role="dialog" aria-modal="true" aria-label="Unrelated dialog">
+    <p>Generic unrelated dialog — must stay open during Limit Dialog tests.</p>
+    <button type="button" id="generic-close"><span class="btn-label">閉じる</span></button>
+  </div>
+
+  <div id="limit-dialog-root" hidden>
+    <div role="dialog" aria-modal="true" class="limit-plan-dialog">
+      <p>ePoseをご利用いただき、誠にありがとうございます。</p>
+      <p>2週間のトライアルは終了いたしました。</p>
+      <p>有料プランならAI姿勢分析が無制限</p>
+      <section aria-label="現在適用中の契約プラン">
+        <p>プラン名</p>
+        <p>フリープラン</p>
+      </section>
+      <label class="checkbox-wrapper">
+        <input type="checkbox" id="limit-dialog-hide-next" />
+        次回から表示しない
+      </label>
+      <div class="ant-modal-footer">
+        <button type="button" id="limit-close" lang="ja">
+          <span class="btn-label">閉じる</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    window.__limitDialogOpenCount = 0;
+    window.__limitDialogCloseCount = 0;
+    window.__unrelatedDialogCloseCount = 0;
+    window.__alphabetTabClickCount = 0;
+
+    const limitRoot = document.getElementById('limit-dialog-root');
+    const limitClose = document.getElementById('limit-close');
+    const unrelated = document.getElementById('generic-unrelated-dialog');
+    const detailPanel = document.getElementById('customer-detail-panel');
+    const detailHeading = document.getElementById('detail-heading');
+
+    function showLimitDialog() {
+      window.__limitDialogOpenCount += 1;
+      limitRoot.hidden = false;
+    }
+
+    function hideLimitDialog() {
+      window.__limitDialogCloseCount += 1;
+      limitRoot.hidden = true;
+    }
+
+    function openCustomerRecord(recordEl) {
+      const id = recordEl.getAttribute('data-customer-id');
+      const name =
+        recordEl.querySelector(':scope > div:nth-child(2) > div:first-child')?.textContent?.trim() ??
+        '';
+      detailHeading.textContent = name;
+      detailPanel.hidden = false;
+      window.history.pushState({}, '', '/customers/' + id);
+    }
+
+    limitClose.addEventListener('click', hideLimitDialog);
+
+    document.getElementById('plan-change-link').addEventListener('click', function (e) {
+      e.preventDefault();
+      showLimitDialog();
+    });
+    document.getElementById('quick-analysis').addEventListener('click', showLimitDialog);
+    document.getElementById('new-analysis').addEventListener('click', showLimitDialog);
+
+    document.getElementById('alphabet-tab-a').addEventListener('click', function () {
+      window.__alphabetTabClickCount += 1;
+    });
+    document.getElementById('alphabet-tab-a-kana').addEventListener('click', function () {
+      window.__alphabetTabClickCount += 1;
+    });
+
+    document
+      .querySelectorAll(
+        '#phonebook-list-wrapper [id^="phonebook-set-"]:not(#phonebook-set-loading) > div > div > div.customer-record-row'
+      )
+      .forEach(function (record) {
+        record.addEventListener('click', function () {
+          openCustomerRecord(record);
+        });
+      });
+
+    document.getElementById('generic-close').addEventListener('click', function () {
+      window.__unrelatedDialogCloseCount += 1;
+      unrelated.hidden = true;
+    });
+
+    if (new URLSearchParams(window.location.search).get('auto') === '1') {
+      setTimeout(showLimitDialog, 200);
+    }
+
+    fetch('https://api-stg.epose.com/contract/subscription').catch(function () {});
+    fetch('https://api-stg.epose.com/contract/get_payment_history?accountId=fixture&limit=1').catch(function () {});
+  </script>
+</body>
+</html>

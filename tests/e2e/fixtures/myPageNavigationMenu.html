@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>My Page navigation menu fixture</title>
+</head>
+<body>
+  <h1 id="page-title">マイページ</h1>
+  <div id="page-root">
+    <div id="profile-readonly-section">
+      <div>プロフィール</div>
+      <div>
+        <div class="value-rows">
+          <div id="person-in-charge">Fixture PIC（テストフリガナ）</div>
+          <div id="display-name">表示名：Fixture Display</div>
+        </div>
+        <button type="button"><span class="btn-label">編 集</span></button>
+      </div>
+    </div>
+    <div id="email-section">
+      <div>メールアドレス</div>
+      <div id="signed-in-email">user@example.com</div>
+      <button type="button">編 集</button>
+    </div>
+  </div>
+  <img role="img" alt="Menu" id="menu-button" tabindex="0" />
+  <div id="nav-dialog" role="dialog" aria-modal="true" hidden>
+    <nav id="nav-dialog-body">
+      <a id="nav-mypage-link" href="/my-page">マイページ</a>
+    </nav>
+  </div>
+  <script>
+    window.__menuOpenCount = 0;
+    window.__myPageNavClickCount = 0;
+    window.__blockMyPageNavClick = false;
+
+    const menuButton = document.getElementById('menu-button');
+    const dialog = document.getElementById('nav-dialog');
+    const myPageLink = document.getElementById('nav-mypage-link');
+
+    menuButton.addEventListener('click', () => {
+      window.__menuOpenCount += 1;
+      dialog.hidden = false;
+    });
+
+    myPageLink.addEventListener('click', (event) => {
+      window.__myPageNavClickCount += 1;
+      if (window.__blockMyPageNavClick) {
+        event.preventDefault();
+        throw new Error('マイページ navigation click blocked');
+      }
+      event.preventDefault();
+      dialog.hidden = true;
+      history.pushState({}, '', '/my-page');
+      fetch('https://api-stg.epose.com/auth/profile', {
+        method: 'POST',
+        credentials: 'include',
+      }).catch(() => {});
+    });
+  </script>
+</body>
+</html>

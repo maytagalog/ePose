@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>Company information settings fixture</title>
+  <style>
+    #country-select-wrapper {
+      position: relative;
+    }
+    #country-select-wrapper .country-select-popup.ant-select-dropdown-hidden {
+      display: none;
+    }
+    #country-select-wrapper .country-select-popup:not(.ant-select-dropdown-hidden) {
+      display: block;
+      position: relative;
+      z-index: 1000;
+      background: #fff;
+      border: 1px solid #ccc;
+      max-height: 200px;
+      overflow: auto;
+    }
+    #country-select-wrapper .ant-select-item-option {
+      padding: 8px 12px;
+      cursor: pointer;
+      display: flex;
+    }
+    #country-select-wrapper .ant-select-selection-search-input {
+      width: 100%;
+      margin: 4px 0;
+    }
+  </style>
+</head>
+<body>
+  <main id="root">
+    <div class="page-title-wrap"><div id="settings-page-title">設定</div></div>
+    <section id="company-section">
+      <h2>会社情報</h2>
+      <div class="company-readonly">
+        <div id="readonly-name">Business</div>
+        <div id="readonly-address">Abbot Street, New Queensland, Australia</div>
+        <div class="company-information-telephone-number" id="readonly-phone">09012345678</div>
+        <button type="button" id="open-edit">編集</button>
+      </div>
+    </section>
+    <div class="group-title">姿勢分析レポート表示設定</div>
+    <div class="display-settings-wrapper">
+      <div>表示項目の設定</div>
+      <button type="button" id="open-display-edit-stub" disabled aria-hidden="true">編集</button>
+    </div>
+  </main>
+  <template id="edit-template">
+    <div id="edit-shell">
+      <div class="page-heading">会社情報の編集</div>
+      <div class="edit-fields-stack">
+        <div class="field-group" id="business-name-field">
+          <div>事業者（店舗）名</div>
+          <div class="control-nested"><div><input name="businessName" autocomplete="off" /></div></div>
+        </div>
+        <div class="field-group">
+          <div>電話番号</div>
+          <div class="control-nested"><input name="telephoneNumber" autocomplete="off" /></div>
+        </div>
+        <div class="field-group">
+          <div>国</div>
+          <div class="control-nested">
+            <div id="country-select-wrapper">
+              <div class="ant-select-selector" tabindex="0" role="combobox" aria-expanded="false"></div>
+              <div class="ant-select-selection-item" title="Australia">Australia</div>
+              <input type="search" class="ant-select-selection-search-input" aria-expanded="false" />
+              <div class="country-select-popup ant-select-dropdown ant-select-dropdown-hidden"></div>
+            </div>
+          </div>
+        </div>
+        <div class="field-group">
+          <div>郵便番号</div>
+          <div class="control-nested"><input name="postalCode" autocomplete="off" /></div>
+        </div>
+        <div class="field-group">
+          <div>州</div>
+          <div class="control-nested"><input name="stateProvinceRegion" autocomplete="off" /></div>
+        </div>
+        <div class="field-group">
+          <div>番地</div>
+          <div class="control-nested"><input name="street" autocomplete="off" /></div>
+        </div>
+        <div class="field-group">
+          <div>建物など</div>
+          <div class="control-nested"><input name="buildings" autocomplete="off" /></div>
+        </div>
+        <div class="field-group">
+          <div>WebサイトURL</div>
+          <div class="control-nested"><input type="url" name="website" autocomplete="off" /></div>
+        </div>
+        <div class="edit-actions">
+          <button type="button" class="cancel-button">キャンセル</button>
+          <button type="button" class="save-button">保 存</button>
+        </div>
+      </div>
+    </div>
+  </template>
+  <script>
+    window.__saveClickCount = 0;
+    const GET_STORE_URL = 'https://api-stg.epose.com/menu/get_user_company_store';
+    const GET_EDIT_URL = 'https://api-stg.epose.com/menu/get_user_company';
+    const UPDATE_URL = 'https://api-stg.epose.com/menu/update_company';
+
+    const FIXTURE_COUNTRY_OPTIONS = [
+      { iso2: 'AU', label: 'Australia' },
+      { iso2: 'UA', label: 'Ukraine' },
+      { iso2: 'IN', label: 'India' },
+      { iso2: 'CA', label: 'Canada' },
+      { iso2: 'JP', label: 'Japan(日本)' },
+      { iso2: 'ID', label: 'Indonesia' },
+    ];
+
+    function countryApiToTitle(code) {
+      const found = FIXTURE_COUNTRY_OPTIONS.find(function (entry) {
+        return entry.iso2 === code;
+      });
+      return found ? found.label : code;
+    }
+
+    function countryTitleToIso(title) {
+      const found = FIXTURE_COUNTRY_OPTIONS.find(function (entry) {
+        return entry.label === title;
+      });
+      return found ? found.iso2 : title;
+    }
+
+    function applyApiData(data) {
+      const address = data.address || {};
+      const countryCode = (address.country || '').trim();
+      return {
+        businessName: data.organizationName || '',
+        telephoneNumber: (data.companyPhone || '').replace(/-/g, ''),
+        countryCode: countryCode,
+        countryTitle: countryApiToTitle(countryCode),
+        postalCode: address.postalCode || '',
+        stateProvinceRegion: address.stateProvinceRegion || '',
+        street: address.street || '',
+        buildings: address.buildings || '',
+        website: data.companyWebsite || '',
+      };
+    }
+
+    window.__fixtureOmitCountryInSettingsAddress = false;
+
+    function formatSettingsAddressReadonly(stored) {
+      const segments = [stored.buildings, stored.street, stored.stateProvinceRegion].filter(function (part) {
+        return part && String(part).trim();
+      });
+      const core = segments.join(', ');
+      if (window.__fixtureOmitCountryInSettingsAddress) {
+        return core ? core + ',' : '';
+      }
+      const countryName = countryApiToTitle(stored.countryCode || 'AU');
+      const postal = (stored.postalCode || '').trim();
+      if (window.__fixtureWrongPostcodeOrder && postal) {
+        const wrongCore = core ? core + ', ' + postal + ' ' + countryName : postal + ' ' + countryName;
+        return wrongCore;
+      }
+      const countrySegment = postal ? countryName + ' ' + postal : countryName;
+      return core ? core + ', ' + countrySegment : countrySegment;
+    }
+
+    window.__fixtureWrongPostcodeOrder = false;
+
+    window.__stored = applyApiData({
+      organizationName: 'Business',
+      companyPhone: '09012345678',
+      companyWebsite: '',
+      address: {
+        country: 'AU',
+        postalCode: '',
+        stateProvinceRegion: 'New Queensland',
+        street: 'Abbot Street',
+        buildings: '',
+      },
+    });
+
+    function renderReadonly() {
+      document.getElementById('readonly-name').textContent = window.__stored.businessName;
+      document.getElementById('readonly-phone').textContent = window.__stored.telephoneNumber;
+      document.getElementById('readonly-address').textContent = formatSettingsAddressReadonly(window.__stored);
+    }
+
+    function showReadonly() {
+      document.getElementById('root').hidden = false;
+      const existing = document.getElementById('edit-shell');
+      if (existing) existing.closest('#layout-edit-outer')?.remove() || existing.remove();
+      renderReadonly();
+    }
+
+    const BUSINESS_NAME_INVALID_MSG = '利用できない文字が含まれています。';
+
+    function businessNameContainsRejectedChars(value) {
+      return /\d/.test(value);
+    }
+
+    function syncBusinessNameValidation(editRoot) {
+      const field = editRoot.querySelector('#business-name-field');
+      const input = field.querySelector('input[name="businessName"]');
+      const saveBtn = editRoot.querySelector('.save-button');
+      let msg = field.querySelector('.business-name-validation-error');
+      if (businessNameContainsRejectedChars(input.value)) {
+        if (!msg) {
+          msg = document.createElement('div');
+          msg.className = 'business-name-validation-error';
+          msg.textContent = BUSINESS_NAME_INVALID_MSG;
+          field.appendChild(msg);
+        }
+        saveBtn.disabled = true;
+      } else {
+        if (msg) msg.remove();
+        saveBtn.disabled = false;
+      }
+    }
+
+    function wireBusinessNameValidation(editRoot) {
+      const input = editRoot.querySelector('#business-name-field input[name="businessName"]');
+      input.addEventListener('input', () => syncBusinessNameValidation(editRoot));
+      syncBusinessNameValidation(editRoot);
+    }
+
+    function populateEditFields(editRoot) {
+      const setNamed = (name, value) => {
+        const input = editRoot.querySelector('input[name="' + name + '"]');
+        if (input) input.value = value;
+      };
+      setNamed('businessName', window.__stored.businessName);
+      setNamed('telephoneNumber', window.__stored.telephoneNumber);
+      setNamed('postalCode', window.__stored.postalCode);
+      setNamed('stateProvinceRegion', window.__stored.stateProvinceRegion);
+      setNamed('street', window.__stored.street);
+      setNamed('buildings', window.__stored.buildings);
+      const websiteInput = editRoot.querySelector('input[type="url"]');
+      if (websiteInput) websiteInput.value = window.__stored.website;
+      const countryItem = editRoot.querySelector('#country-select-wrapper .ant-select-selection-item');
+      if (countryItem) {
+        countryItem.setAttribute('title', window.__stored.countryTitle);
+        countryItem.textContent = window.__stored.countryTitle;
+      }
+    }
+
+    function closeCountryPopup(popup, searchInput, combobox) {
+      popup.classList.add('ant-select-dropdown-hidden');
+      if (searchInput) searchInput.setAttribute('aria-expanded', 'false');
+      if (combobox) combobox.setAttribute('aria-expanded', 'false');
+    }
+
+    function openCountryPopup(popup, searchInput, combobox) {
+      popup.classList.remove('ant-select-dropdown-hidden');
+      if (searchInput) searchInput.setAttribute('aria-expanded', 'true');
+      if (combobox) combobox.setAttribute('aria-expanded', 'true');
+    }
+
+    function renderCountryDropdownOptions(editRoot, filterText) {
+      const popup = editRoot.querySelector('#country-select-wrapper .country-select-popup');
+      if (!popup) return;
+      popup.innerHTML = '';
+      const filter = (filterText || '').trim().toLowerCase();
+      FIXTURE_COUNTRY_OPTIONS.filter(function (entry) {
+        if (!filter) return true;
+        return entry.label.toLowerCase().includes(filter);
+      }).forEach(function (entry) {
+        const option = document.createElement('div');
+        option.className = 'ant-select-item ant-select-item-option';
+        option.setAttribute('role', 'option');
+        option.setAttribute('title', entry.label);
+        const content = document.createElement('div');
+        content.className = 'ant-select-item-option-content';
+        content.textContent = entry.label;
+        option.appendChild(content);
+        option.dataset.iso2 = entry.iso2;
+        popup.appendChild(option);
+      });
+    }
+
+    function wireCountrySelect(editRoot) {
+      const wrapper = editRoot.querySelector('#country-select-wrapper');
+      const trigger = wrapper.querySelector('.ant-select-selector');
+      const popup = wrapper.querySelector('.country-select-popup');
+      const countryItem = wrapper.querySelector('.ant-select-selection-item');
+      const searchInput = wrapper.querySelector('input.ant-select-selection-search-input');
+      let previousIso = window.__stored.countryCode;
+
+      renderCountryDropdownOptions(editRoot, '');
+
+      function open() {
+        openCountryPopup(popup, searchInput, trigger);
+        renderCountryDropdownOptions(editRoot, searchInput ? searchInput.value : '');
+      }
+
+      trigger.addEventListener('click', open);
+      countryItem.addEventListener('click', open);
+      if (searchInput) {
+        searchInput.addEventListener('input', function () {
+          renderCountryDropdownOptions(editRoot, searchInput.value);
+          openCountryPopup(popup, searchInput, trigger);
+        });
+      }
+
+      popup.addEventListener('click', function (event) {
+        const target = event.target.closest('.ant-select-item-option');
+        if (!target) return;
+        const label = target.getAttribute('title') || target.textContent.trim();
+        const iso2 = target.dataset.iso2 || countryTitleToIso(label);
+        countryItem.setAttribute('title', label);
+        countryItem.textContent = label;
+        window.__stored.countryCode = iso2;
+        window.__stored.countryTitle = label;
+        if (previousIso !== iso2) {
+          ['postalCode', 'stateProvinceRegion', 'street', 'buildings'].forEach(function (name) {
+            const input = editRoot.querySelector('input[name="' + name + '"]');
+            if (input) input.value = '';
+          });
+        }
+        previousIso = iso2;
+        if (searchInput) searchInput.value = '';
+        closeCountryPopup(popup, searchInput, trigger);
+      });
+
+      document.addEventListener('keydown', function onKey(event) {
+        if (event.key !== 'Escape') return;
+        if (!editRoot.isConnected) {
+          document.removeEventListener('keydown', onKey);
+          return;
+        }
+        closeCountryPopup(popup, searchInput, trigger);
+      });
+    }
+
+    function readEditFieldValues(editRoot) {
+      const websiteInput = editRoot.querySelector('input[type="url"]');
+      return {
+        businessName: editRoot.querySelector('input[name="businessName"]').value.trim(),
+        telephoneNumber: editRoot.querySelector('input[name="telephoneNumber"]').value,
+        postalCode: editRoot.querySelector('input[name="postalCode"]').value,
+        stateProvinceRegion: editRoot.querySelector('input[name="stateProvinceRegion"]').value,
+        street: editRoot.querySelector('input[name="street"]').value,
+        buildings: editRoot.querySelector('input[name="buildings"]').value,
+        website: websiteInput ? websiteInput.value : '',
+      };
+    }
+
+    function showEdit() {
+      document.getElementById('root').hidden = true;
+      const tpl = document.getElementById('edit-template');
+      const node = tpl.content.cloneNode(true);
+      document.body.appendChild(node);
+      const editRoot = document.getElementById('edit-shell');
+      populateEditFields(editRoot);
+      wireCountrySelect(editRoot);
+      wireBusinessNameValidation(editRoot);
+      editRoot.querySelector('.cancel-button').addEventListener('click', () => {
+        history.pushState({}, '', '/settings');
+        showReadonly();
+      });
+      editRoot.querySelector('.save-button').addEventListener('click', () => {
+        window.__saveClickCount += 1;
+        const fields = readEditFieldValues(editRoot);
+        const countryTitle =
+          editRoot.querySelector('#country-select-wrapper .ant-select-selection-item')?.getAttribute(
+            'title'
+          ) || window.__stored.countryTitle;
+        const countryCode = countryTitleToIso(countryTitle);
+        const payload = {
+          id: 'fixture-account',
+          data: {
+            organizationName: fields.businessName,
+            companyPhone: fields.telephoneNumber,
+            companyAddressId: 'fixture-address-id',
+            address: {
+              country: countryCode,
+              postalCode: fields.postalCode,
+              stateProvinceRegion: fields.stateProvinceRegion,
+              street: fields.street,
+              buildings: fields.buildings,
+            },
+            companyWebsite: fields.website,
+          },
+        };
+        fetch(UPDATE_URL, {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }).catch(() => {});
+        window.__stored = {
+          businessName: payload.data.organizationName,
+          telephoneNumber: payload.data.companyPhone,
+          countryCode: payload.data.address.country,
+          countryTitle: countryApiToTitle(payload.data.address.country),
+          postalCode: payload.data.address.postalCode,
+          stateProvinceRegion: payload.data.address.stateProvinceRegion,
+          street: payload.data.address.street,
+          buildings: payload.data.address.buildings,
+          website: payload.data.companyWebsite || '',
+        };
+        const toast = document.createElement('div');
+        toast.id = 'toast';
+        toast.textContent = 'ステータスが正常に更新されました';
+        document.body.appendChild(toast);
+        history.pushState({}, '', '/settings');
+        showReadonly();
+      });
+    }
+
+    function openEditFromApi() {
+      fetch(GET_EDIT_URL, { method: 'POST', credentials: 'include' })
+        .then((response) => response.json())
+        .then((json) => {
+          if (json && json.organizationName) {
+            window.__stored = applyApiData(json);
+          }
+          history.pushState({}, '', '/settings/company-information');
+          showEdit();
+        })
+        .catch(() => {
+          history.pushState({}, '', '/settings/company-information');
+          showEdit();
+        });
+    }
+
+    document.getElementById('open-edit').addEventListener('click', openEditFromApi);
+
+    window.addEventListener('load', () => {
+      fetch(GET_STORE_URL, { method: 'POST', credentials: 'include' })
+        .then((response) => response.json())
+        .then((json) => {
+          if (json && json.organizationName) {
+            window.__stored = applyApiData(json);
+            renderReadonly();
+          }
+        })
+        .catch(() => undefined);
+    });
+
+    window.addEventListener('popstate', () => {
+      const path = location.pathname.replace(/\/$/, '');
+      if (path.endsWith('company-information')) openEditFromApi();
+      else showReadonly();
+    });
+
+    renderReadonly();
+  </script>
+</body>
+</html>

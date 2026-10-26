@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>Logout navigation menu fixture</title>
+</head>
+<body>
+  <div id="customers-root">customers shell</div>
+  <div id="login-root" hidden>
+    <input role="textbox" aria-label="メールアドレス" id="login-email" value="" />
+    <input role="textbox" aria-label="パスワード" type="password" id="login-password" value="" />
+    <button type="button" id="login-submit" disabled>ログイン</button>
+  </div>
+  <img role="img" alt="Menu" id="menu-button" tabindex="0" />
+  <div id="logout-decoy" hidden aria-hidden="true">ログアウト</div>
+  <div id="nav-dialog" role="dialog" aria-modal="true" hidden>
+    <nav id="nav-dialog-body">
+      <button type="button" id="nav-logout">ログアウト</button>
+    </nav>
+  </div>
+  <script>
+    window.__logoutClickCount = Number(sessionStorage.getItem('logout-fixture-click-count') || '0');
+    window.__loginSubmitCount = Number(sessionStorage.getItem('logout-fixture-login-count') || '0');
+    window.__skipLogoutRedirect = window.__skipLogoutRedirect ?? false;
+    window.__keepSessionAfterLogout = window.__keepSessionAfterLogout ?? false;
+
+    const SESSION_KEY = 'logout-fixture-session';
+
+    function readSessionAuthenticated() {
+      return localStorage.getItem(SESSION_KEY) !== 'logged_out';
+    }
+
+    function writeSessionAuthenticated(authenticated) {
+      if (authenticated) {
+        localStorage.removeItem(SESSION_KEY);
+      } else {
+        localStorage.setItem(SESSION_KEY, 'logged_out');
+      }
+    }
+
+    const menuButton = document.getElementById('menu-button');
+    const dialog = document.getElementById('nav-dialog');
+    const logoutButton = document.getElementById('nav-logout');
+    const customersRoot = document.getElementById('customers-root');
+    const loginRoot = document.getElementById('login-root');
+    const emailInput = document.getElementById('login-email');
+    const passwordInput = document.getElementById('login-password');
+    const loginSubmit = document.getElementById('login-submit');
+
+    function syncLoginSubmitEnabled() {
+      const filled =
+        emailInput.value.trim().length > 0 && passwordInput.value.length > 0;
+      loginSubmit.disabled = !filled;
+    }
+
+    function resetLoginFormEmpty() {
+      emailInput.value = '';
+      passwordInput.value = '';
+      loginSubmit.disabled = true;
+    }
+
+    function showCustomers() {
+      customersRoot.hidden = false;
+      loginRoot.hidden = true;
+      menuButton.hidden = !readSessionAuthenticated();
+    }
+
+    function showLogin() {
+      customersRoot.hidden = true;
+      loginRoot.hidden = false;
+      menuButton.hidden = true;
+      resetLoginFormEmpty();
+    }
+
+    emailInput.addEventListener('input', syncLoginSubmitEnabled);
+    passwordInput.addEventListener('input', syncLoginSubmitEnabled);
+
+    menuButton.addEventListener('click', () => {
+      if (!readSessionAuthenticated()) return;
+      dialog.hidden = false;
+    });
+
+    logoutButton.addEventListener('click', () => {
+      window.__logoutClickCount += 1;
+      sessionStorage.setItem('logout-fixture-click-count', String(window.__logoutClickCount));
+      dialog.hidden = true;
+      if (window.__skipLogoutRedirect) {
+        return;
+      }
+      if (!window.__keepSessionAfterLogout) {
+        writeSessionAuthenticated(false);
+      }
+      history.pushState({}, '', '/login');
+      showLogin();
+    });
+
+    loginSubmit.addEventListener('click', () => {
+      if (loginRoot.hidden || loginSubmit.disabled) return;
+      window.__loginSubmitCount += 1;
+      sessionStorage.setItem('logout-fixture-login-count', String(window.__loginSubmitCount));
+    });
+
+    function syncFromPath() {
+      const path = window.location.pathname.replace(/\/$/, '') || '/';
+      if (path === '/login') {
+        showLogin();
+        return;
+      }
+      if (path === '/customers' || path.startsWith('/customers/')) {
+        if (!readSessionAuthenticated()) {
+          history.replaceState({}, '', '/login');
+          showLogin();
+          return;
+        }
+        showCustomers();
+        return;
+      }
+      showCustomers();
+    }
+
+    window.addEventListener('popstate', syncFromPath);
+    if (!localStorage.getItem(SESSION_KEY)) {
+      writeSessionAuthenticated(true);
+    }
+    syncFromPath();
+  </script>
+</body>
+</html>

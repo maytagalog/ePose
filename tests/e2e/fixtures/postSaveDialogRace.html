@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>post-save dialog race fixture</title>
+  <style>
+    .ant-modal-wrap { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); }
+    .ant-modal-content { background: #fff; margin: 10% auto; padding: 16px; width: 320px; }
+  </style>
+</head>
+<body>
+  <button id="save" type="button">保 存</button>
+  <main>
+    <h3 id="customer-name">E2E Fixture Customer</h3>
+    <button id="profile" type="button">顧客情報を表示</button>
+    <table id="profile-table" hidden>
+      <tr><td>生年月日</td><td>2002/11/16 (23)</td></tr>
+      <tr><td>身長</td><td>142 cm</td></tr>
+      <tr><td>性別</td><td>男性</td></tr>
+    </table>
+  </main>
+  <div id="modal-wrap" class="ant-modal-wrap ant-modal-centered">
+    <div class="ant-modal-content" role="dialog" aria-label="登録完了">
+      <p>登録完了</p>
+      <div>このまま姿勢分析を開始しますか？</div>
+      <span id="return-list" style="cursor:pointer">顧客一覧へもどる</span>
+    </div>
+  </div>
+</body>
+</html>

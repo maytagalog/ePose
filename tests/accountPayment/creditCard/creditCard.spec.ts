@@ -1,13 +1,23 @@
 import { test, expect } from '@playwright/test';
 import { login } from "../../../utils/login";
 import moment from 'moment';
+function requireEnv(name: string): string {
+    const value = process.env[name];
+    if (!value?.trim()) {
+        throw new Error(`Set ${name} before running this test.`);
+    }
+    return value;
+}
 
 test('credit card payment - 3 months', async ({ page }) => {
     test.setTimeout(350000);
     //must be a new user or user's subscription already ended
     
     //new email every test
-    await login(page, { email: "l.l.a.nfairpwllgwyngyl.lgoger111@gmail.com", password: "qwert6y7u" });
+    await login(page, {
+        email: requireEnv('EPOSE_PLAN_EMAIL'),
+        password: requireEnv('EPOSE_PLAN_PASSWORD'),
+    });
     await page.waitForTimeout(3000)
     await expect(page.getByRole('img', { name: 'Menu' })).toBeVisible()
 

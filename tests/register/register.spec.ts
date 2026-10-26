@@ -1,5 +1,12 @@
 import { test, expect } from '@playwright/test';
 import { waitForEmail } from '../../utils/gmail';
+function requireEnv(name: string): string {
+    const value = process.env[name];
+    if (!value) {
+        throw new Error(`Missing required environment variable: ${name}`);
+    }
+    return value;
+}
 
 test('check default page on load', async ({ page }) => {
     // goes to the specified page
@@ -39,10 +46,9 @@ test('register', async ({ page }) => {
     let EMAIL_CODE = 0;
     let EMAIL_VERIFICATION_URL = '';
 
-    //move the dot since register only accepts a unique email
-    //new email every test;must not be a registered email
-    // hippopotomonstrosesquip123@gmail.com
-    const EMAIL = `h.ippopotomonstrosesquip123@gmail.com`
+        // Use an unregistered email address for this standalone test.
+        const EMAIL = requireEnv('EPOSE_REGISTER_EMAIL');
+        const PASSWORD = requireEnv('EPOSE_REGISTER_PASSWORD');
 
     const passwordFields = page.locator('input[type="password"]');
 
@@ -54,8 +60,8 @@ test('register', async ({ page }) => {
     // checks if the error message is not visible
     await expect(page.locator('div[data-cy="error-label"]')).toBeHidden();
     // fill the password fields
-    await passwordFields.first().fill('qwert6y7u');
-    await passwordFields.nth(1).fill('qwert6y7u');
+    await passwordFields.first().fill(PASSWORD);
+    await passwordFields.nth(1).fill(PASSWORD);
 
     await page.getByRole('checkbox').click();
 

@@ -1,16 +1,48 @@
-import { Page } from '@playwright/test';
+import { Page, expect } from '@playwright/test';
 
-export async function login(page: Page, credentials?: { email?: string | "", password?: string | "" }) {
+export type LoginCredentials = {
+    email?: string;
+    password?: string;
+    /** When true, assume the browser is already on /login; do not call page.goto(). */
+    skipNavigation?: boolean;
+};
 
-    await page.goto('https://app-stg.epose.com/login', { waitUntil: 'domcontentloaded' });
+export async function login(
+    page: Page,
+    credentials?: LoginCredentials
+) {
+
+    const email = credentials?.email ?? process.env.EPOSE_LOGIN_EMAIL;
+    const password = credentials?.password ?? process.env.EPOSE_LOGIN_PASSWORD;
+
+    if (!email?.trim() || !password) {
+        throw new Error(
+           'Provide login credentials explicitly or set EPOSE_LOGIN_EMAIL and EPOSE_LOGIN_PASSWORD.'
+        );
+   }
+
+    const skipNavigation = credentials?.skipNavigation ?? false;
+
+    if (skipNavigation) {
+        await expect(page).toHaveURL(/\/login/, { timeout: 15000 });
+    } else {
+        await page.goto('https://app-stg.epose.com/login', {
+            waitUntil: 'domcontentloaded',
+        });
+    }
 
     const closeButton = page.locator('button', { hasText: 'とじる' });
     if (await closeButton.isVisible()) {
         await closeButton.click();
     }
 
-    await page.getByRole('textbox', { name: 'メールアドレス' }).fill(credentials?.email ?? "bestivulle40@yopmail.com");
-    await page.getByRole('textbox', { name: 'パスワード' }).fill(credentials?.password ?? "qwert6y7u");
+    await page
+        .getByRole('textbox', { name: 'メールアドレス' })
+        .fill(email);
+
+    await page
+        .getByRole('textbox', { name: 'パスワード' })
+        .fill(password);
     await page.getByRole('button', { name: 'ログイン' }).click();
     await page.waitForTimeout(5000);
 
@@ -18,7 +50,7 @@ export async function login(page: Page, credentials?: { email?: string | "", pas
     if (await continueButton.isVisible()) {
         await continueButton.click();
     }
-    await page.waitForURL(/customers/, { waitUntil: "domcontentloaded" });
+    await page.waitForURL(/customers/, { waitUntil: 'domcontentloaded' });
 
     const nextButton = page.locator('#next');
     if (await nextButton.isVisible()) {

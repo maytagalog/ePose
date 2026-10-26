@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>Part 2 login fixture — session takeover modal</title>
+  <style>
+    .ant-modal-root { position: relative; z-index: 1000; }
+    .ant-modal-wrap { position: fixed; inset: 0; overflow: auto; outline: 0; }
+    .ant-modal-mask { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.45); pointer-events: none; }
+    .simultaneous-login-dialog { position: relative; z-index: 1; }
+    .simultaneous-login-dialog { margin: 48px auto; max-width: 520px; background: #fff; padding: 24px; position: relative; z-index: 1; }
+    .ant-modal-footer { display: flex; justify-content: center; gap: 12px; margin-top: 24px; }
+    #decoy-takeover-copy-container { display: none; }
+    #session-takeover-portal[hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <form id="login-form">
+    <input type="email" role="textbox" aria-label="メールアドレス" />
+    <input type="password" role="textbox" aria-label="パスワード" />
+    <button type="submit">ログイン</button>
+  </form>
+
+  <div id="decoy-takeover-copy-container" aria-hidden="true">
+    <div>
+      本アカウントは別の端末で使用中です。
+      この端末でログインしますか？
+    </div>
+  </div>
+
+  <div id="session-takeover-portal" hidden>
+    <div class="ant-modal-root">
+      <div class="ant-modal-wrap">
+        <div class="ant-modal-mask"></div>
+        <div
+          role="dialog"
+          aria-modal="true"
+          class="ant-modal simultaneous-login-dialog"
+          aria-label="本アカウントは別の端末で使用中です。この端末でログインしますか？"
+        >
+          <div class="ant-modal-content">
+            <div class="ant-modal-body">
+              <p>
+                <strong>本アカウントは別の端末で使用中です。<br />この端末でログインしますか？</strong>
+              </p>
+              <p>
+                ログインした場合、使用中端末の解析中データは失われ、強制的にログアウトされます。
+              </p>
+            </div>
+            <div class="ant-modal-footer">
+              <button type="button" class="ant-btn">キャンセル</button>
+              <button type="button" class="ant-btn ant-btn-primary" id="takeover-continue">続行する</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    window.__takeoverContinueClickCount = 0;
+
+    const portal = document.getElementById('session-takeover-portal');
+    const continueBtn = document.getElementById('takeover-continue');
+
+    continueBtn.addEventListener('click', function () {
+      window.__takeoverContinueClickCount += 1;
+      try {
+        sessionStorage.setItem(
+          'part2TakeoverContinueClicks',
+          String(window.__takeoverContinueClickCount)
+        );
+      } catch (e) {}
+      portal.hidden = true;
+      window.location.assign(window.location.origin + '/customers');
+    });
+
+    document.getElementById('login-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      fetch('https://api-stg.epose.com/auth/profile', { method: 'POST' }).catch(function () {});
+      setTimeout(function () {
+        portal.hidden = false;
+      }, 400);
+    });
+  </script>
+</body>
+</html>

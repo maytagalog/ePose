@@ -5,7 +5,10 @@
     "main": "index.js",
     "scripts": {
         "test": "npx playwright test",
-        "submit-results": "testmo automation:run:submit --instance https://vananaz-qa.testmo.net --project-id 6 --name \"26/03/26 Staging-Smoke Test\" --source \"frontend\" --results results.xml"
+        "test:smoke": "npx playwright test tests/e2e/fullE2ESmoke.spec.ts tests/e2e/fullE2ESmokePart2.spec.ts --workers=2",
+        "submit:smoke": "node scripts/submitSmokeResults.mjs",
+        "test:submit-smoke-helper": "node --test scripts/submitSmokeResults.test.mjs",
+        "submit-results": "npm run submit:smoke"
     },
     "keywords": [],
     "author": "",

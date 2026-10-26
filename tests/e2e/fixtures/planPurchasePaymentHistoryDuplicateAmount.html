@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>Payment history duplicate amount fixture</title>
+</head>
+<body>
+  <h1>決済履歴</h1>
+  <table>
+    <tbody>
+      <tr data-row-key="pay_old_same_amount">
+        <td>
+          <div class="payment-history-table-row-item">
+            <div class="payment-history-table-row-item-value">¥29,400</div>
+            <div class="payment-history-table-row-item-value">支払済み</div>
+          </div>
+        </td>
+        <td>
+          <a href="https://pay.stripe.com/receipts/payment/old_rcpt_111aaa" target="_blank" rel="noopener noreferrer">領収書</a>
+        </td>
+      </tr>
+      <tr data-row-key="pay_new_run">
+        <td>
+          <div class="payment-history-table-row-item">
+            <div class="payment-history-table-row-item-value">¥29,400</div>
+            <div class="payment-history-table-row-item-value">支払済み</div>
+          </div>
+        </td>
+        <td>
+          <a href="https://pay.stripe.com/receipts/payment/new_rcpt_999zzz" target="_blank" rel="noopener noreferrer" id="receipt-new-run">領収書</a>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <button type="button">ご契約情報へもどる</button>
+  <script>
+    document.getElementById('receipt-new-run').addEventListener('click', (e) => {
+      e.preventDefault();
+      window.open('/receipt/new_rcpt_999zzz-content', '_blank');
+    });
+  </script>
+</body>
+</html>

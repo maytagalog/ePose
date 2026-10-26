@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>Display item settings fixture</title>
+  <style>
+    [role="dialog"] {
+      position: fixed;
+      inset: 20% 30%;
+      background: #fff;
+      border: 1px solid #ccc;
+      padding: 16px;
+      z-index: 1000;
+    }
+    [role="dialog"][hidden] {
+      display: none !important;
+    }
+    .toggle-wrapper {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin: 12px 0;
+    }
+    button[role="switch"] {
+      width: 44px;
+      height: 24px;
+      border-radius: 12px;
+      border: 1px solid #888;
+      background: #ddd;
+      cursor: pointer;
+    }
+    button[role="switch"][aria-checked="true"] {
+      background: #4caf50;
+    }
+    #toast {
+      position: fixed;
+      top: 12px;
+      right: 12px;
+      background: #333;
+      color: #fff;
+      padding: 8px 12px;
+    }
+  </style>
+</head>
+<body>
+  <main id="root">
+    <div class="page-title-wrap"><div id="settings-page-title">設定</div></div>
+    <section id="company-section">
+      <h2>会社情報</h2>
+      <div class="company-readonly">
+        <div id="readonly-name">Business</div>
+        <div id="readonly-address">Abbot Street, New Queensland, Australia</div>
+        <div class="company-information-telephone-number" id="readonly-phone">09012345678</div>
+        <button type="button" id="open-edit-company" disabled aria-hidden="true">編集</button>
+      </div>
+    </section>
+    <div class="group-title">姿勢分析レポート表示設定</div>
+    <div class="display-settings-wrapper">
+      <div>表示項目の設定</div>
+      <button type="button" id="open-display-edit">編集</button>
+    </div>
+  </main>
+
+  <div role="dialog" id="display-dialog" hidden aria-modal="true">
+    <div class="modal-title">表示項目の設定</div>
+    <div>エクササイズとストレッチ</div>
+    <div class="toggle-wrapper">
+      <p id="state-label">表示</p>
+      <button type="button" role="switch" id="exercise-switch" aria-checked="true"></button>
+    </div>
+    <div class="dialog-actions">
+      <button type="button" class="keep-btn">保存</button>
+      <button type="button" class="cancel-btn">キャンセル</button>
+    </div>
+  </div>
+
+  <script>
+    const GET_STORE_URL = 'https://api-stg.epose.com/menu/get_user_company_store';
+    const GET_USER_URL = 'https://api-stg.epose.com/auth/get_user';
+    const UPDATE_USER_URL = 'https://api-stg.epose.com/auth/update_user';
+
+    window.__showExercisesAndStretches = true;
+    window.__getUserFetchCount = 0;
+    window.__updateUserPatchCount = 0;
+
+    function renderSwitchState() {
+      const checked = !!window.__showExercisesAndStretches;
+      const sw = document.getElementById('exercise-switch');
+      sw.setAttribute('aria-checked', checked ? 'true' : 'false');
+      document.getElementById('state-label').textContent = checked ? '表示' : '非表示';
+    }
+
+    function openDialog() {
+      renderSwitchState();
+      document.getElementById('display-dialog').hidden = false;
+    }
+
+    function closeDialog() {
+      document.getElementById('display-dialog').hidden = true;
+    }
+
+    function showToast(message) {
+      const existing = document.getElementById('toast');
+      if (existing) existing.remove();
+      const toast = document.createElement('div');
+      toast.id = 'toast';
+      toast.textContent = message;
+      document.body.appendChild(toast);
+    }
+
+    document.getElementById('open-display-edit').addEventListener('click', openDialog);
+
+    document.getElementById('exercise-switch').addEventListener('click', function () {
+      const sw = document.getElementById('exercise-switch');
+      const next = sw.getAttribute('aria-checked') !== 'true';
+      sw.setAttribute('aria-checked', next ? 'true' : 'false');
+      document.getElementById('state-label').textContent = next ? '表示' : '非表示';
+    });
+
+    document.querySelector('.cancel-btn').addEventListener('click', closeDialog);
+
+    document.querySelector('.keep-btn').addEventListener('click', function () {
+      const sw = document.getElementById('exercise-switch');
+      const value = sw.getAttribute('aria-checked') === 'true';
+      fetch(UPDATE_USER_URL, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ showExercisesAndStretches: value }),
+      })
+        .then(function (response) {
+          if (!response.ok) throw new Error('update failed');
+          window.__showExercisesAndStretches = value;
+          closeDialog();
+          showToast('更新しました。');
+        })
+        .catch(function () {
+          showToast('更新に失敗しました');
+        });
+    });
+
+    window.addEventListener('load', function () {
+      fetch(GET_STORE_URL, { method: 'POST', credentials: 'include' }).catch(function () {
+        return undefined;
+      });
+      fetch(GET_USER_URL, { method: 'GET', credentials: 'include' })
+        .then(function (response) {
+          return response.json();
+        })
+        .then(function (json) {
+          if (json && typeof json.showExercisesAndStretches === 'boolean') {
+            window.__showExercisesAndStretches = json.showExercisesAndStretches;
+          }
+        })
+        .catch(function () {
+          return undefined;
+        });
+    });
+  </script>
+</body>
+</html>

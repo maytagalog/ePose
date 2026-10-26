@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>Settings navigation fixture</title>
+</head>
+<body>
+  <div id="customers-root">customers</div>
+  <div id="settings-root" hidden>
+    <div class="page-title-wrap"><div id="settings-page-title">設定</div></div>
+    <h2>会社情報</h2>
+    <div class="company-information-telephone-number">09012345678</div>
+    <button type="button">編集</button>
+  </div>
+  <img role="img" alt="Menu" id="menu-button" tabindex="0" />
+  <div id="nav-dialog" role="dialog" aria-modal="true" hidden>
+    <nav id="nav-dialog-body">
+      <a id="nav-settings-link" href="/settings">設定</a>
+    </nav>
+  </div>
+  <script>
+    window.__menuOpenCount = 0;
+    window.__settingsNavClickCount = 0;
+    window.__storeFetchCount = 0;
+    const GET_STORE_URL = 'https://api-stg.epose.com/menu/get_user_company_store';
+    const menuButton = document.getElementById('menu-button');
+    const dialog = document.getElementById('nav-dialog');
+    const settingsLink = document.getElementById('nav-settings-link');
+    menuButton.addEventListener('click', () => {
+      window.__menuOpenCount += 1;
+      dialog.hidden = false;
+    });
+    settingsLink.addEventListener('click', (event) => {
+      window.__settingsNavClickCount += 1;
+      event.preventDefault();
+      dialog.hidden = true;
+      history.pushState({}, '', '/settings');
+      document.getElementById('settings-root').hidden = false;
+      window.__storeFetchCount += 1;
+      fetch(GET_STORE_URL, {
+        method: 'POST',
+        credentials: 'include',
+      }).catch(() => {});
+    });
+  </script>
+</body>
+</html>

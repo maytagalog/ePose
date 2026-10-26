@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta charset="utf-8" /><title>Referral fixture</title></head>
+<body>
+  <div id="contract-view">
+    <div>ご契約情報</div>
+    <button type="button">プランを変更する</button>
+  </div>
+  <img role="img" alt="Menu" id="menu-button" />
+  <div id="nav-dialog" role="dialog" aria-modal="true" hidden>
+    <button type="button" id="nav-referral">紹介クーポン</button>
+  </div>
+  <div id="referral-view" hidden>
+    <div class="page-title-wrap"><div>紹介クーポン</div></div>
+    <div class="coupon-code-text">FIXTURE9X</div>
+    <button type="button" id="email-share">メールで紹介する</button>
+  </div>
+  <div id="share-dialog" role="dialog" aria-modal="true" hidden>
+    <div>紹介クーポンコードをメールで共有する</div>
+    <input placeholder="example@epose.com" id="email-input" />
+    <button type="button" id="send-once">送信する</button>
+  </div>
+  <script>
+    const menuBtn = document.getElementById('menu-button');
+    const navDialog = document.getElementById('nav-dialog');
+    const referralNav = document.getElementById('nav-referral');
+    const contractView = document.getElementById('contract-view');
+    const referralView = document.getElementById('referral-view');
+    const shareBtn = document.getElementById('email-share');
+    const shareDialog = document.getElementById('share-dialog');
+    const sendBtn = document.getElementById('send-once');
+    let sendCount = 0;
+
+    menuBtn.addEventListener('click', () => { navDialog.hidden = false; navDialog.style.display = 'block'; });
+    referralNav.addEventListener('click', () => {
+      navDialog.hidden = true;
+      navDialog.style.display = 'none';
+      contractView.hidden = true;
+      contractView.style.display = 'none';
+      referralView.hidden = false;
+      referralView.style.display = 'block';
+      history.pushState({}, '', '/coupon');
+    });
+    shareBtn.addEventListener('click', () => { shareDialog.hidden = false; shareDialog.style.display = 'block'; });
+    sendBtn.addEventListener('click', () => {
+      sendCount += 1;
+      if (sendCount > 1) throw new Error('duplicate send');
+      shareDialog.hidden = true;
+      shareDialog.style.display = 'none';
+    });
+  </script>
+</body>
+</html>

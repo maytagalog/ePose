@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>Part 2 login fixture — delayed 続行する</title>
+</head>
+<body>
+  <form id="login-form">
+    <input type="email" role="textbox" aria-label="メールアドレス" />
+    <input type="password" role="textbox" aria-label="パスワード" />
+    <button type="submit">ログイン</button>
+  </form>
+  <button type="button" id="continue-btn" hidden>続行する</button>
+  <script>
+    const continueBtn = document.getElementById('continue-btn');
+    document.getElementById('login-form').addEventListener('submit', function (e) {
+      e.preventDefault();
+      setTimeout(function () {
+        continueBtn.hidden = false;
+      }, 400);
+    });
+    continueBtn.addEventListener('click', function () {
+      window.location.assign('/customers');
+    });
+  </script>
+</body>
+</html>

@@ -1,12 +1,22 @@
 import { test, expect } from '@playwright/test';
 import { login } from "../../utils/login";
 import { waitForEmail } from '../../utils/gmail';
+function requireEnv(name: string): string {
+    const value = process.env[name];
+    if (!value?.trim()) {
+        throw new Error(`Set ${name} before running this test.`);
+    }
+    return value;
+}
 
 test.describe('Updating of the profile', () => {
     test('Should be able to update the fields individually.', async ({ page }) => {
         test.setTimeout(300000);
 
-        await login(page, { email: "avrilmax286@gmail.com", password: "Passw0rd" });
+        await login(page, {
+            email: requireEnv('EPOSE_LEGACY_PROFILE_INDIVIDUAL_EMAIL'),
+            password: requireEnv('EPOSE_LEGACY_PROFILE_INDIVIDUAL_PASSWORD'),
+        });
 
         await page.getByRole('img', { name: 'Menu' }).click();
         await page.getByText('マイページ').click();
@@ -34,7 +44,10 @@ test.describe('Updating of the profile', () => {
     test('Should be able to update the fields in bulk.', async ({ page }) => {
         test.setTimeout(120000);
 
-        await login(page, { email: "loudcrayon@yopmail.com", password: "qwert6y7u" });
+        await login(page, {
+            email: requireEnv('EPOSE_LEGACY_PROFILE_BULK_EMAIL'),
+            password: requireEnv('EPOSE_LEGACY_PROFILE_BULK_PASSWORD'),
+        });
 
         await page.getByRole('img', { name: 'Menu' }).click();
         await page.getByText('マイページ').click();
@@ -60,8 +73,8 @@ test.describe('Account Withdrawal', () => {
     // test('Should be able to withdraw an account if User is in Free Plan.', async ({ page }) => {
     //     test.setTimeout(120000);
 
-    //     const withdrawnEmail = "limittest00005@yopmail.com";
-    //     const withdrawnPassword = "qwert6y7u";
+    //     const withdrawnEmail = requireEnv('EPOSE_WITHDRAWAL_EMAIL');
+    //     const withdrawnPassword = requireEnv('EPOSE_WITHDRAWAL_PASSWORD');
 
     //     await login(page, { email: withdrawnEmail, password: withdrawnPassword });
 
@@ -120,8 +133,8 @@ test.describe('Account Withdrawal', () => {
         test.setTimeout(150000);
 
         //should be new user every time
-        const withdrawnEmail = "l.l.a.nfairpwllgwyngy.llgoger111@gmail.com";
-        const withdrawnPassword = "qwert6y7u";
+        const withdrawnEmail = requireEnv('EPOSE_WITHDRAWAL_EMAIL');
+        const withdrawnPassword = requireEnv('EPOSE_WITHDRAWAL_PASSWORD');
 
         await login(page, { email: withdrawnEmail, password: withdrawnPassword });
 
@@ -207,14 +220,16 @@ test.describe('Account Withdrawal', () => {
 test('my page - change email', async ({ page }) => {
     test.setTimeout(180000);
     //switch between 2 emails:
-    //l.l.anfairpwllgwyn.gyllgoger111@gmail.com
-    //l.l.a.nfairpwllgwyngyllgoger111@gmail.com
+
 
     let EMAIL_CODE = '';
-    let currentEmail = "l.l.anfairpwllgwyn.gyllgoger111@gmail.com";
-    let newEmail = "l.lanfairpwllg.wyngyllgoger111@gmail.com";
-    await login(page, { email: currentEmail, password: "p0l4rB34R" });
+    let currentEmail = requireEnv('EPOSE_CHANGE_EMAIL_CURRENT_EMAIL');
+    let newEmail = requireEnv('EPOSE_LEGACY_CHANGE_EMAIL_TARGET');
 
+    await login(page, {
+        email: currentEmail,
+        password: requireEnv('EPOSE_CHANGE_EMAIL_PASSWORD'),
+    });
     await page.getByRole('img', { name: 'Menu' }).click();
     await expect(page.getByText('マイページ')).toBeVisible();
     await page.getByText('マイページ').click();
@@ -254,10 +269,14 @@ test('my page - change email', async ({ page }) => {
 
 test('my page - change password', async ({ page, context }) => {
     test.setTimeout(180000);
-    const newEmail = "l.la.nfairpwllgwyngyllgoger111@gmail.com";
+    const newEmail = requireEnv('EPOSE_CHANGE_PASSWORD_EMAIL');
+    const newPassword = requireEnv('EPOSE_CHANGE_PASSWORD_NEW_PASSWORD');
     console.log("count: 2")
     let EMAIL_CODE = '';
-    await login(page, { email: newEmail, password: "p0l4rB34R" });
+    await login(page, {
+        email: newEmail,
+        password: requireEnv('EPOSE_CHANGE_PASSWORD_CURRENT_PASSWORD'),
+    });
 
     await page.getByRole('img', { name: 'Menu' }).click();
     await expect(page.getByText('マイページ')).toBeVisible();
@@ -284,8 +303,8 @@ test('my page - change password', async ({ page, context }) => {
     await page.goto('https://app-stg.epose.com/my-page/change-new-password', { waitUntil: "domcontentloaded" });
     //await page.waitForTimeout(10000);
     await expect(page.locator('input[type="text"]')).toBeVisible();
-    await expect(page.locator('input[type="password"]').first()).toBeEmpty();
-    await expect(page.locator('input[type="password"]').nth(1)).toBeEmpty();
+    await page.locator('input[type="password"]').first().fill(newPassword);
+    await page.locator('input[type="password"]').nth(1).fill(newPassword);
     await expect(page.getByRole('button', { name: '送 信' })).toBeDisabled();
 
     await page.locator('input[type="text"]').fill(`${EMAIL_CODE}`);

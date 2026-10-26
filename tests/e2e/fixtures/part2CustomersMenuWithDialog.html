@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>Part 2 customers — Menu with generic post-login dialog</title>
+</head>
+<body>
+  <header>
+    <img role="img" alt="Menu" />
+  </header>
+  <div id="generic-post-login-dialog" role="dialog" aria-modal="true">
+    <p id="dialog-copy">Fixture generic post-login dialog (not Limit Dialog eligibility copy).</p>
+    <button type="button" id="dialog-dismiss">とじる</button>
+  </div>
+  <script>
+    window.__dialogDismissClickCount = 0;
+    document.getElementById('dialog-dismiss').addEventListener('click', function () {
+      window.__dialogDismissClickCount += 1;
+      document.getElementById('generic-post-login-dialog').hidden = true;
+    });
+    fetch('https://api-stg.epose.com/auth/profile', { method: 'POST' });
+  </script>
+</body>
+</html>

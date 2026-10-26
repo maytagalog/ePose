@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>Payment history fixture</title>
+  <style>
+    .payment-history-row { border: 1px solid #ddd; margin: 8px 0; padding: 12px; }
+  </style>
+</head>
+<body>
+  <h1>決済履歴</h1>
+  <div class="payment-history-row" data-payment-history-id="pay_old">
+    <div>支払済み</div>
+    <div>¥29,400</div>
+    <a href="https://receipt.fixture.test/old" target="_blank">領収書</a>
+  </div>
+  <div class="payment-history-row" data-payment-history-id="pay_new_run">
+    <div>支払済み</div>
+    <div>¥29,400</div>
+    <a href="/receipt/run-receipt" target="_blank" id="receipt-new">領収書</a>
+  </div>
+  <button type="button">ご契約情報へもどる</button>
+  <script>
+    document.getElementById('receipt-new').addEventListener('click', (e) => {
+      e.preventDefault();
+      window.open('/receipt/run-receipt-content', '_blank');
+    });
+  </script>
+</body>
+</html>

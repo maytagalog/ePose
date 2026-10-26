@@ -1,9 +1,19 @@
 import { test, expect } from '@playwright/test';
 import { login } from "../../utils/login";
+function requireEnv(name: string): string {
+    const value = process.env[name];
+    if (!value) {
+        throw new Error(`Missing required environment variable: ${name}`);
+    }
+    return value;
+}
 
 test('analysis report', async ({ page }) => {
     test.setTimeout(500000);
-    await login(page, { email: "bestivulle39@yopmail.com", password: "qwert6y7u" });
+    await login(page, {
+        email: requireEnv('EPOSE_ANALYSIS_REPORT_EMAIL'),
+        password: requireEnv('EPOSE_ANALYSIS_REPORT_PASSWORD'),
+    });
 
     await page.getByRole('img').nth(4).click();
 

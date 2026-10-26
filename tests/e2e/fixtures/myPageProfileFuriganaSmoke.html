@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>Furigana-only profile smoke fixture</title>
+</head>
+<body>
+  <div id="app"></div>
+  <script>
+    const BASE = 'https://fixture.test';
+    let saveClickCount = Number(sessionStorage.getItem('saveClickCount') || '0');
+    const defaultState = {
+      personInCharge: 'Fixture PIC',
+      furigana: 'テストオリジ',
+      displayName: 'Fixture Display',
+    };
+    let state = defaultState;
+
+    function loadState() {
+      const saved = sessionStorage.getItem('profileState');
+      if (saved) {
+        state = JSON.parse(saved);
+      } else {
+        state = { ...defaultState };
+      }
+    }
+
+    function persistState() {
+      sessionStorage.setItem('profileState', JSON.stringify(state));
+      sessionStorage.setItem('saveClickCount', String(saveClickCount));
+    }
+
+    function combinedLine() {
+      if (!state.furigana.trim()) return state.personInCharge;
+      return `${state.personInCharge}（${state.furigana}）`;
+    }
+
+    function path() {
+      return window.location.pathname.replace(/\/$/, '') || '/';
+    }
+
+    function renderReadOnly() {
+      document.getElementById('app').innerHTML = `
+        <div id="profile-readonly-section">
+          <div>プロフィール</div>
+          <div class="value-rows">
+            <div id="combined-name">${combinedLine()}</div>
+            <div>表示名：${state.displayName}</div>
+          </div>
+          <button type="button" id="open-edit">編 集</button>
+        </div>
+        <div>メールアドレス</div>
+        <div>user@example.com</div>
+      `;
+      document.getElementById('open-edit').onclick = () => {
+        history.pushState({}, '', BASE + '/my-page/profile/edit');
+        renderEdit();
+      };
+    }
+
+    function renderEdit() {
+      document.getElementById('app').innerHTML = `
+        <form id="profile-form">
+          <div>プロフィール編集</div>
+          <input type="text" role="textbox" id="tb0" value="${state.personInCharge}" />
+          <input type="text" role="textbox" id="tb1" value="${state.furigana}" />
+          <input type="text" role="textbox" id="tb2" value="${state.displayName}" />
+          <button type="button" id="save" disabled>保 存</button>
+          <button type="button" id="cancel">キャンセル</button>
+        </form>
+      `;
+      const tb1 = document.getElementById('tb1');
+      const save = document.getElementById('save');
+      tb1.addEventListener('input', () => {
+        save.disabled = tb1.value === state.furigana;
+      });
+      save.onclick = () => {
+        saveClickCount += 1;
+        state.furigana = tb1.value;
+        persistState();
+        history.pushState({}, '', BASE + '/my-page');
+        renderReadOnly();
+      };
+      document.getElementById('cancel').onclick = () => {
+        history.pushState({}, '', BASE + '/my-page');
+        renderReadOnly();
+      };
+    }
+
+    window.__getSaveClickCount = () => saveClickCount;
+    window.__setStalePersistence = (v) => { window.__stale = v; };
+    window.addEventListener('popstate', route);
+    function route() {
+      loadState();
+      if (path() === '/my-page/profile/edit') renderEdit();
+      else renderReadOnly();
+    }
+    route();
+  </script>
+</body>
+</html>

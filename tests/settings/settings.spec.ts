@@ -1,10 +1,20 @@
 import { test, expect } from '@playwright/test';
 import { login } from "../../utils/login"
+function requireEnv(name: string): string {
+    const value = process.env[name];
+    if (!value?.trim()) {
+        throw new Error(`Set ${name} before running this test.`);
+    }
+    return value;
+}
 
 test('settings', async ({ page }) => {
     test.setTimeout(80000);
 
-    login(page, { email: "bestivulle45@yopmail.com", password: "qwert6y7u" });
+    await login(page, {
+        email: requireEnv('EPOSE_COMPANY_INFO_EMAIL'),
+        password: requireEnv('EPOSE_COMPANY_INFO_PASSWORD'),
+    });
 
     await page.getByRole('img', { name: 'Menu' }).click();
     await expect(page.getByText('設定')).toBeVisible();

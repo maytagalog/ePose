@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>Plan selection fixture</title>
+  <style>
+    .plan-selection-card-wrapper { border: 1px solid #ccc; margin: 8px; padding: 12px; max-width: 280px; display: inline-block; vertical-align: top; }
+    .duration { font-weight: bold; }
+    .billing-footer { margin-top: 24px; padding: 16px; border-top: 2px solid #333; }
+    .card-selection { display: flex; gap: 8px; }
+    .selected-marker { color: green; font-weight: bold; }
+    .card-selection-title { margin: 12px 0; }
+    .tax-label { font-size: 12px; color: #666; }
+    .page-title { font-size: 20px; font-weight: bold; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <div class="page-title">プラン選択</div>
+  <div class="card-selection-title">
+    <div>プラン選択</div>
+    <div class="tax-label">※消費税込</div>
+  </div>
+  <div class="card-selection">
+    <div class="plan-selection-card-wrapper" data-plan="3m">
+      <div class="duration">3 ヶ月プラン</div>
+      <div class="card-total">合計金額 ¥29,400</div>
+      <button type="button" class="plan-select">このプランを選択</button>
+    </div>
+    <div class="plan-selection-card-wrapper" data-plan="6m">
+      <div class="duration">6 ヶ月プラン</div>
+      <div class="card-total">合計金額 ¥52,800</div>
+      <button type="button" class="plan-select">このプランを選択</button>
+    </div>
+    <div class="plan-selection-card-wrapper" data-plan="12m">
+      <div class="duration">12 ヶ月プラン</div>
+      <div class="card-total">合計金額 ¥98,400</div>
+      <button type="button" class="plan-select">このプランを選択</button>
+    </div>
+  </div>
+  <div class="billing-details">
+    <div>選択中プラン</div>
+    <div id="selected-label">—</div>
+  </div>
+  <div class="billing-footer">
+    <div id="footer-total">合計金額 ¥29,400</div>
+    <button type="button" id="proceed" disabled>お支払い情報入力</button>
+  </div>
+  <script>
+    const cards = document.querySelectorAll('.plan-selection-card-wrapper');
+    const proceed = document.getElementById('proceed');
+    const selectedLabel = document.getElementById('selected-label');
+    const footerTotal = document.getElementById('footer-total');
+
+    function selectPlanCard(card) {
+      cards.forEach((c) => {
+        c.querySelectorAll('.selected-marker').forEach((n) => n.remove());
+      });
+      const marker = document.createElement('div');
+      marker.className = 'selected-marker';
+      marker.textContent = '選択中';
+      card.appendChild(marker);
+      const amountEl = card.querySelector('.card-total');
+      footerTotal.textContent = amountEl ? amountEl.textContent.trim() : '合計金額 ¥29,400';
+      selectedLabel.textContent = card.querySelector('.duration').textContent.trim();
+      proceed.disabled = false;
+    }
+
+    cards.forEach((card) => {
+      card.querySelector('.plan-select').addEventListener('click', () => selectPlanCard(card));
+    });
+
+    proceed.addEventListener('click', () => {
+      if (!proceed.disabled) {
+        window.location.assign('/contract/payment-information');
+      }
+    });
+  </script>
+</body>
+</html>

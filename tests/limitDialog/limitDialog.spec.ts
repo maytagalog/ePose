@@ -1,10 +1,20 @@
-    import { test, expect } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { login } from "../../utils/login";
+function requireEnv(name: string): string {
+    const value = process.env[name];
+    if (!value) {
+        throw new Error(`Missing required environment variable: ${name}`);
+    }
+    return value;
+}
 
 test('limit dialog', async ({ page }) => {
     test.setTimeout(60000);
 
-    await login(page, { email: "limittest00001@yopmail.com", password: "qwert6y7u" });
+    await login(page, {
+        email: requireEnv('EPOSE_LIMIT_DIALOG_EMAIL'),
+        password: requireEnv('EPOSE_LIMIT_DIALOG_PASSWORD'),
+    });
     await page.waitForLoadState('domcontentloaded');
 
     // Wait for main content to be ready before interacting

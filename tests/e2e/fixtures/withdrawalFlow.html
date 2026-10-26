@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta charset="utf-8" /><title>Withdrawal fixture</title></head>
+<body>
+  <div id="view-mypage">
+    <div class="page-title-wrap"><div>マイページ</div></div>
+    <div>
+      <div>プロフィール</div>
+      <div>Fixture Director（フィクスチャ）</div>
+      <div>表示名：Fixture User</div>
+      <button type="button">編集</button>
+    </div>
+    <div>
+      <div>メールアドレス</div>
+      <div id="account-email">fixture@example.com</div>
+      <button type="button">編集</button>
+    </div>
+    <button type="button" id="unsubscribe-link">退会のお手続きはこちら</button>
+  </div>
+  <div id="view-contract" hidden>
+    <h1>ご契約情報</h1>
+    <button type="button">プランを変更する</button>
+    <div>お支払いの自動更新</div>
+    <button type="button" id="stop-renewal">自動更新を停止する(解約)</button>
+  </div>
+  <div id="view-intro" hidden>
+    <div class="page-title-wrap"><div>退会</div></div>
+    <button type="button" id="intro-withdraw">退会する</button>
+  </div>
+  <div id="view-reason" hidden>
+    <div class="page-title-wrap"><div>退会</div></div>
+    <div id="step-form">
+      <button type="button" id="reason-other">その他</button>
+      <input role="textbox" id="reason-text" />
+      <button type="button" id="reason-next">次へ</button>
+    </div>
+  </div>
+  <div id="view-login" hidden>
+    <input role="textbox" aria-label="メールアドレス" id="login-email" />
+    <input role="textbox" aria-label="パスワード" id="login-password" />
+    <button type="button" id="login-submit">ログイン</button>
+    <div id="login-error" hidden>メールアドレスもしくはパスワードが正しくありません。</div>
+  </div>
+  <img role="img" alt="Menu" id="menu-button" />
+  <div id="nav-dialog" role="dialog" aria-modal="true" hidden style="display:none">
+    <button type="button" id="nav-mypage">マイページ</button>
+  </div>
+  <div id="dialog-block" role="dialog" aria-modal="true" hidden>
+    <div>自動更新の停止が必要です</div>
+    <button type="button" id="to-contract">ご契約情報へ</button>
+  </div>
+  <div id="dialog-stop" role="dialog" aria-modal="true" hidden>
+    <label><input type="checkbox" id="agree" />同意する</label>
+    <button type="button" id="submit-stop">停止する</button>
+  </div>
+  <div id="dialog-final" role="dialog" aria-modal="true" aria-labelledby="dialog-final-title" hidden>
+    <div id="dialog-final-title">確認</div>
+    <div id="dialog-final-body">退会すると、データは全て削除されます。データの復旧はできません。
+本当に退会しますか？</div>
+    <button type="button" id="final-cancel">キャンセル</button>
+    <button type="button" id="final-withdraw">退会する</button>
+  </div>
+  <div id="toast" hidden>自動更新を停止しました。</div>
+  <script>
+    const FIXTURE_EMAIL = 'fixture@example.com';
+    const SUBSCRIPTION_URL = 'https://api-stg.epose.com/contract/subscription';
+    const PATCH_CANCEL_URL = 'https://api-stg.epose.com/contract/cancel_auto_renewal';
+    const DELETE_URL = 'https://api-stg.epose.com/auth/delete';
+    const LOGIN_URL = 'https://api-stg.epose.com/auth/login';
+
+    let renewalDisabled = false;
+    let finalWithdrawCount = 0;
+    let stopSubmitCount = 0;
+
+    function show(id) {
+      for (const el of document.querySelectorAll('[id^="view-"]')) {
+        el.hidden = true;
+        el.style.display = 'none';
+      }
+      const target = document.getElementById(id);
+      target.hidden = false;
+      target.style.display = 'block';
+    }
+
+    function showPath(path) {
+      const normalized = path.replace(/\/$/, '') || '/';
+      if (normalized === '/my-page') show('view-mypage');
+      if (normalized === '/contract') {
+        show('view-contract');
+        fetch(SUBSCRIPTION_URL);
+        subscriptionRenewalDisabled().then((disabled) => {
+          if (!disabled) return;
+          const toast = document.getElementById('toast');
+          toast.hidden = false;
+          toast.style.display = 'block';
+        });
+      }
+      if (normalized === '/my-page/unsubscribe') show('view-intro');
+      if (normalized === '/my-page/unsubscribe/reason') show('view-reason');
+      if (normalized === '/login') show('view-login');
+    }
+
+    function route(path) {
+      history.pushState({}, '', path);
+      showPath(path);
+    }
+
+    async function subscriptionRenewalDisabled() {
+      if (renewalDisabled) return true;
+      const res = await fetch(SUBSCRIPTION_URL);
+      if (!res.ok) return renewalDisabled;
+      const body = await res.json();
+      return body?.current?.cancelAtPeriodEnd === true;
+    }
+
+    document.getElementById('unsubscribe-link').addEventListener('click', async () => {
+      if (!(await subscriptionRenewalDisabled())) {
+        document.getElementById('dialog-block').hidden = false;
+        return;
+      }
+      route('/my-page/unsubscribe');
+    });
+
+    document.getElementById('to-contract').addEventListener('click', async () => {
+      document.getElementById('dialog-block').hidden = true;
+      await fetch(SUBSCRIPTION_URL);
+      route('/contract');
+    });
+
+    document.getElementById('stop-renewal').addEventListener('click', () => {
+      document.getElementById('dialog-stop').hidden = false;
+    });
+
+    document.getElementById('submit-stop').addEventListener('click', async () => {
+      stopSubmitCount += 1;
+      if (stopSubmitCount > 1) throw new Error('duplicate stop submit');
+      if (!document.getElementById('agree').checked) throw new Error('agree required');
+      document.getElementById('dialog-stop').hidden = true;
+      const res = await fetch(PATCH_CANCEL_URL, { method: 'PATCH', body: '{}' });
+      if (!res.ok) throw new Error('patch failed');
+      renewalDisabled = true;
+      document.getElementById('toast').hidden = false;
+      await fetch(SUBSCRIPTION_URL);
+    });
+
+    document.getElementById('intro-withdraw').addEventListener('click', () => route('/my-page/unsubscribe/reason'));
+    document.getElementById('reason-other').addEventListener('click', () => {});
+    document.getElementById('reason-next').addEventListener('click', () => {
+      document.getElementById('dialog-final').hidden = false;
+    });
+    document.getElementById('final-cancel').addEventListener('click', () => {
+      document.getElementById('dialog-final').hidden = true;
+    });
+    document.getElementById('final-withdraw').addEventListener('click', async () => {
+      finalWithdrawCount += 1;
+      if (finalWithdrawCount > 1) throw new Error('duplicate final withdraw');
+      document.getElementById('dialog-final').hidden = true;
+      const res = await fetch(DELETE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: FIXTURE_EMAIL }),
+      });
+      if (!res.ok) throw new Error('delete failed');
+      route('/login');
+    });
+
+    document.getElementById('login-submit').addEventListener('click', async () => {
+      const res = await fetch(LOGIN_URL, { method: 'POST', body: '{}' });
+      if (res.status === 401) {
+        document.getElementById('login-error').hidden = false;
+      }
+      if (res.status >= 500) {
+        document.getElementById('login-error').hidden = true;
+      }
+    });
+
+    document.getElementById('menu-button').addEventListener('click', () => {
+      const nav = document.getElementById('nav-dialog');
+      nav.hidden = false;
+      nav.style.display = 'block';
+    });
+    document.getElementById('nav-mypage').addEventListener('click', () => {
+      document.getElementById('nav-dialog').hidden = true;
+      document.getElementById('nav-dialog').style.display = 'none';
+      fetch('https://api-stg.epose.com/auth/profile', { method: 'POST' });
+      route('/my-page');
+    });
+
+    showPath(window.location.pathname);
+  </script>
+</body>
+</html>

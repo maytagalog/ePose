@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>CIRS record customer shell fixture</title>
+  <style>
+    .back { cursor: pointer; display: inline-block; padding: 4px 8px; border: 1px solid #999; }
+    .customer-record-row { cursor: pointer; padding: 4px 0; }
+    #customers-list-view[hidden] { display: none !important; }
+    #customer-detail-panel[hidden] { display: none !important; }
+    #record-detail-panel[hidden] { display: none !important; }
+    #record-list-panel[hidden] { display: none !important; }
+    .interaction-records-section { border: 1px solid #ddd; padding: 8px; margin-top: 12px; }
+    .interaction-record-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div id="customers-list-view">
+    <button type="button" class="btn-label">新規登録</button>
+    <button type="button" id="decoy-list-header">一覧</button>
+    <div role="tablist" aria-label="Alphabet filters">
+      <button type="button" role="tab">あ</button>
+    </div>
+    <div id="phonebook-list-wrapper">
+      <div id="phonebook-set-あ">
+        <p>あ</p>
+        <div><div><div class="customer-record-row" data-customer-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa">
+          <div><img alt="Profile face" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" width="16" height="16" /></div>
+          <div>
+            <div>Fixture CIRS Customer</div>
+            <div>フィクスチャシーアイアールエス</div>
+            <div><img alt="User Icon" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" width="12" height="12" /></div>
+          </div>
+        </div></div></div>
+      </div>
+    </div>
+  </div>
+
+  <main role="main">
+    <div id="customer-detail-panel" hidden>
+      <h3>Fixture CIRS Customer</h3>
+      <p>フィクスチャシーアイアールエス</p>
+      <button type="button" class="profile-toggle">顧客情報を表示</button>
+      <button type="button" id="decoy-list-customer-toolbar">一覧</button>
+
+      <!-- Header-only decoy: heading + 一覧 without row host (must not satisfy section boundary). -->
+      <div class="interaction-records-header-only" hidden aria-hidden="true">
+        <div>応対記録</div>
+        <div class="record-btn-wrapper">
+          <button type="button" class="list-btn">
+            <span class="btn-label"><img alt="list response report" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" width="12" height="12" />一覧</span>
+          </button>
+        </div>
+      </div>
+
+      <section class="interaction-records-section" aria-label="応対記録">
+        <div class="interaction-records-header-row">
+          <div>応対記録</div>
+          <div class="record-btn-wrapper">
+            <button type="button" class="list-btn" id="section-list">
+              <span class="btn-label"><img alt="list response report" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" width="12" height="12" />一覧</span>
+            </button>
+            <button type="button" id="new-customer-service">new response report 新規応対</button>
+          </div>
+        </div>
+        <div id="interaction-record-rows" class="interaction-record-rows-host"></div>
+      </section>
+
+      <section class="posture-analysis-decoy" aria-label="姿勢分析レポート">
+        <div>姿勢分析レポート</div>
+        <div class="record-btn-wrapper">
+          <button type="button" class="list-btn decoy-posture-list">
+            <span class="btn-label"><img alt="list posture report" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" width="12" height="12" />一覧</span>
+          </button>
+        </div>
+        <div class="interaction-record-row posture-decoy-row">
+          <div>2025/7/18</div>
+          <div>立位姿勢分析</div>
+          <div><div><img alt="arrow" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" width="12" height="12" /></div></div>
+        </div>
+      </section>
+    </div>
+
+    <div id="record-detail-panel" hidden>
+      <div class="back" id="back-from-record" role="button" tabindex="0">back</div>
+      <div>応対記録</div>
+      <textarea role="textbox"></textarea>
+    </div>
+
+    <div id="record-list-panel" hidden>
+      <div class="back" id="back-from-list" role="button" tabindex="0">back</div>
+      <h2 id="list-title">Fixture CIRS Customer 様 応対記録一覧</h2>
+      <div id="list-record-rows"></div>
+    </div>
+  </main>
+
+  <script>
+    window.__cirsCreatePostCount = 0;
+    window.__cirsFetchCount = 0;
+    window.__cirsFailCreate = false;
+    window.__cirsLastRecordId = null;
+    window.__cirsAppendNewRecord = window.__cirsAppendNewRecord ?? false;
+    window.__cirsWrongCustomerOnReopen = window.__cirsWrongCustomerOnReopen ?? false;
+    window.__cirsSeedRecordId = window.__cirsSeedRecordId ?? null;
+    window.__cirsFireWrongCustomerFetch = window.__cirsFireWrongCustomerFetch ?? false;
+    window.__cirsForceRouteRecordId = window.__cirsForceRouteRecordId ?? null;
+
+    const CREATE_CUSTOMER_SERVICE_URL =
+      'https://api-stg.epose.com/customer_interaction_record/create_customer_service';
+    const FETCH_CUSTOMER_SERVICES_URL =
+      'https://api-stg.epose.com/customer_interaction_record/fetch_customer_services';
+
+    const CUSTOMER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const WRONG_CUSTOMER_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+    const OLDER_RECORD_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const SAME_DAY_SECOND_RECORD_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
+    const SHARED_ROW_DATE = '2026/10/25';
+    const SHARED_ROW_AUTHOR = 'Fixture Author';
+
+    const listView = document.getElementById('customers-list-view');
+    const customerPanel = document.getElementById('customer-detail-panel');
+    const recordPanel = document.getElementById('record-detail-panel');
+    const listPanel = document.getElementById('record-list-panel');
+    const sectionRowsHost = document.getElementById('interaction-record-rows');
+    const listRowsHost = document.getElementById('list-record-rows');
+
+    /** API order = render order (matches staging assumption until disproven). */
+    let servicesList = [
+      {
+        customerServiceId: OLDER_RECORD_ID,
+        id: 365,
+        createdAt: '2026-10-25T13:00:00.000Z',
+      },
+      {
+        customerServiceId: SAME_DAY_SECOND_RECORD_ID,
+        id: 366,
+        createdAt: '2026-10-25T13:49:33.000Z',
+      },
+    ];
+
+    function servicesPayload() {
+      return servicesList.map(function (entry) {
+        return {
+          customerServiceId: entry.customerServiceId,
+          id: entry.id,
+          createdAt: entry.createdAt,
+        };
+      });
+    }
+
+    window.__cirsServicesPayload = servicesPayload;
+
+    function renderRecordRow(entry) {
+      const row = document.createElement('div');
+      row.className = 'interaction-record-row';
+      row.dataset.customerServiceId = entry.customerServiceId;
+      const dateCol = document.createElement('div');
+      dateCol.className = 'interaction-record-date-column';
+      dateCol.textContent = SHARED_ROW_DATE;
+
+      const authorCol = document.createElement('div');
+      authorCol.className = 'interaction-record-author-column';
+      authorCol.textContent = SHARED_ROW_AUTHOR;
+
+      const arrowCol = document.createElement('div');
+      arrowCol.className = 'interaction-record-arrow-column';
+      const arrowWrap = document.createElement('div');
+      arrowWrap.className = 'interaction-record-arrow-wrapper';
+      const arrow = document.createElement('img');
+      arrow.alt = 'arrow';
+      arrow.width = 12;
+      arrow.height = 12;
+      arrow.src =
+        'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+      arrowWrap.appendChild(arrow);
+      arrowCol.appendChild(arrowWrap);
+
+      row.appendChild(dateCol);
+      row.appendChild(authorCol);
+      row.appendChild(arrowCol);
+      return row;
+    }
+
+    function renderSectionRows() {
+      sectionRowsHost.innerHTML = '';
+      servicesList.forEach(function (entry) {
+        sectionRowsHost.appendChild(renderRecordRow(entry));
+      });
+    }
+
+    function renderListPageRows() {
+      listRowsHost.innerHTML = '';
+      servicesList.forEach(function (entry) {
+        listRowsHost.appendChild(renderRecordRow(entry));
+      });
+    }
+
+    function syncServicesPayloadBinding() {
+      if (typeof window.syncCirsServicesPayload === 'function') {
+        window.syncCirsServicesPayload(JSON.stringify(servicesPayload()));
+      }
+    }
+
+    function fetchCustomerServices(options) {
+      window.__cirsFetchCount += 1;
+      syncServicesPayloadBinding();
+      const fullList = options && options.fullList;
+      const limit = fullList ? '50' : '3';
+      const url =
+        FETCH_CUSTOMER_SERVICES_URL +
+        '?customerId=' +
+        encodeURIComponent(CUSTOMER_ID) +
+        '&orderBy=desc&limit=' +
+        limit;
+      return fetch(url, { method: 'GET' }).then(function (res) {
+        return res.json();
+      });
+    }
+
+    function fetchCustomerServicesWrongCustomer() {
+      const url =
+        FETCH_CUSTOMER_SERVICES_URL +
+        '?customerId=' +
+        encodeURIComponent(WRONG_CUSTOMER_ID) +
+        '&orderBy=desc&limit=3';
+      return fetch(url, { method: 'GET' }).then(function (res) {
+        return res.json();
+      });
+    }
+
+    function refreshCustomerServicesFromApi() {
+      return fetchCustomerServices().then(function () {
+        renderSectionRows();
+      });
+    }
+
+    function insertServiceEntry(customerServiceId) {
+      const entry = {
+        customerServiceId: customerServiceId,
+        id: 400 + servicesList.length,
+        createdAt: new Date().toISOString(),
+      };
+      if (window.__cirsAppendNewRecord) {
+        servicesList.push(entry);
+      } else {
+        servicesList.unshift(entry);
+      }
+      syncServicesPayloadBinding();
+      renderSectionRows();
+    }
+
+    function showCustomerDetail() {
+      listView.hidden = true;
+      customerPanel.hidden = false;
+      recordPanel.hidden = true;
+      listPanel.hidden = true;
+      setProfileExpanded(false);
+      window.history.pushState({}, '', '/customers/' + CUSTOMER_ID);
+      refreshCustomerServicesFromApi().catch(function () {
+        renderSectionRows();
+      });
+      if (window.__cirsFireWrongCustomerFetch) {
+        fetchCustomerServicesWrongCustomer().catch(function () {});
+      }
+    }
+
+    function showRecordDetail(recordId, customerIdOverride) {
+      const cid = customerIdOverride || CUSTOMER_ID;
+      customerPanel.hidden = true;
+      recordPanel.hidden = false;
+      listPanel.hidden = true;
+      listView.hidden = true;
+      window.history.pushState({}, '', '/customers/' + cid + '/interaction-records/' + recordId);
+    }
+
+    function showRecordList() {
+      customerPanel.hidden = true;
+      recordPanel.hidden = true;
+      listPanel.hidden = false;
+      listView.hidden = true;
+      window.history.pushState({}, '', '/customers/' + CUSTOMER_ID + '/interaction-records');
+      fetchCustomerServices({ fullList: true })
+        .then(function () {
+          renderListPageRows();
+        })
+        .catch(function () {
+          renderListPageRows();
+        });
+    }
+
+    function setProfileExpanded(expanded) {
+      const btn = customerPanel.querySelector('button.profile-toggle');
+      if (!btn) return;
+      btn.textContent = expanded ? '顧客情報を非表示' : '顧客情報を表示';
+    }
+
+    customerPanel.querySelector('button.profile-toggle').addEventListener('click', function () {
+      const expanded = this.textContent.indexOf('非表示') >= 0;
+      setProfileExpanded(!expanded);
+    });
+
+    document.querySelector('.customer-record-row').addEventListener('click', showCustomerDetail);
+
+    if (window.__cirsSeedRecordId) {
+      insertServiceEntry(window.__cirsSeedRecordId);
+      window.__cirsLastRecordId = window.__cirsSeedRecordId;
+    }
+
+    document.getElementById('new-customer-service').addEventListener('click', function () {
+      if (window.__cirsFailCreate) {
+        fetch(CREATE_CUSTOMER_SERVICE_URL, { method: 'POST' }).catch(function () {});
+        return;
+      }
+      window.__cirsCreatePostCount += 1;
+      fetch(CREATE_CUSTOMER_SERVICE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: { customerId: CUSTOMER_ID } }),
+      })
+        .then(function (res) {
+          return res.text();
+        })
+        .then(function (text) {
+          const apiId = (text || '').trim();
+          const recordId = window.__cirsForceRouteRecordId || apiId;
+          window.__cirsLastRecordId = recordId;
+          insertServiceEntry(recordId);
+          showRecordDetail(recordId);
+        })
+        .catch(function () {});
+    });
+
+    document.getElementById('back-from-record').addEventListener('click', function () {
+      customerPanel.hidden = false;
+      recordPanel.hidden = true;
+      listView.hidden = true;
+      setProfileExpanded(false);
+      window.history.pushState({}, '', '/customers/' + CUSTOMER_ID);
+      refreshCustomerServicesFromApi().catch(function () {
+        renderSectionRows();
+      });
+    });
+
+    document.getElementById('section-list').addEventListener('click', showRecordList);
+
+    document.getElementById('back-from-list').addEventListener('click', function () {
+      customerPanel.hidden = false;
+      listPanel.hidden = true;
+      setProfileExpanded(false);
+      window.history.pushState({}, '', '/customers/' + CUSTOMER_ID);
+      refreshCustomerServicesFromApi().catch(function () {
+        renderSectionRows();
+      });
+    });
+
+    function handleRecordRowClick(event) {
+      const row = event.target.closest('.interaction-record-row');
+      if (!row || !row.dataset.customerServiceId) return;
+      const recordId = row.dataset.customerServiceId;
+      const wrongCustomer =
+        window.__cirsWrongCustomerOnReopen &&
+        window.__cirsLastRecordId &&
+        recordId === window.__cirsLastRecordId;
+      showRecordDetail(recordId, wrongCustomer ? WRONG_CUSTOMER_ID : undefined);
+    }
+
+    sectionRowsHost.addEventListener('click', handleRecordRowClick);
+    listRowsHost.addEventListener('click', handleRecordRowClick);
+
+    function syncViewFromPath() {
+      const parts = window.location.pathname.split('/').filter(Boolean);
+      const custIdx = parts.indexOf('customers');
+      if (custIdx < 0) return;
+      const recIdx = parts.indexOf('interaction-records');
+      if (recIdx >= 0 && parts.length > recIdx + 1) {
+        const rid = parts[recIdx + 1];
+        if (rid && rid.length >= 32) {
+          showRecordDetail(rid);
+          return;
+        }
+      }
+      if (recIdx >= 0 && parts.length === recIdx + 1) {
+        showRecordList();
+        return;
+      }
+      if (parts.length >= custIdx + 2) {
+        showCustomerDetail();
+      }
+    }
+
+    window.__cirsRefreshSectionFromApi = refreshCustomerServicesFromApi;
+    window.__cirsFetchWrongCustomer = fetchCustomerServicesWrongCustomer;
+
+    syncViewFromPath();
+  </script>
+</body>
+</html>

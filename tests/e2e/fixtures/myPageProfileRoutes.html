@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>My Page profile routes fixture</title>
+</head>
+<body>
+  <div id="app"></div>
+  <script>
+    const BASE = 'https://fixture.test';
+    const BASELINE = {
+      personInCharge: 'Fixture PIC',
+      furigana: 'テストフィクス',
+      displayName: 'Fixture Display',
+    };
+
+    function path() {
+      return window.location.pathname.replace(/\/$/, '') || '/';
+    }
+
+    function combinedNameLine() {
+      if (!BASELINE.furigana.trim()) return BASELINE.personInCharge;
+      return `${BASELINE.personInCharge}（${BASELINE.furigana}）`;
+    }
+
+    function renderReadOnly() {
+      document.getElementById('app').innerHTML = `
+        <div id="profile-readonly-section">
+          <div>プロフィール</div>
+          <div id="person-in-charge">${combinedNameLine()}</div>
+          <div>表示名：${BASELINE.displayName}</div>
+          <button type="button" id="open-edit">編 集</button>
+        </div>
+        <div>メールアドレス</div>
+        <div>user@example.com</div>
+      `;
+      document.getElementById('open-edit').addEventListener('click', () => {
+        history.pushState({}, '', BASE + '/my-page/profile/edit');
+        renderEdit();
+      });
+    }
+
+    function renderEdit() {
+      document.getElementById('app').innerHTML = `
+        <form id="profile-form">
+          <div>プロフィール編集</div>
+          <input type="text" role="textbox" id="tb0" value="${BASELINE.personInCharge}" />
+          <input type="text" role="textbox" id="tb1" value="${BASELINE.furigana}" />
+          <input type="text" role="textbox" id="tb2" value="${BASELINE.displayName}" />
+          <button type="button" disabled>保 存</button>
+          <button type="button" id="cancel">キャンセル</button>
+        </form>
+      `;
+      document.getElementById('cancel').addEventListener('click', () => {
+        history.pushState({}, '', BASE + '/my-page');
+        renderReadOnly();
+      });
+    }
+
+    window.addEventListener('popstate', route);
+    function route() {
+      if (path() === '/my-page/profile/edit') {
+        renderEdit();
+      } else {
+        renderReadOnly();
+      }
+    }
+    route();
+  </script>
+</body>
+</html>

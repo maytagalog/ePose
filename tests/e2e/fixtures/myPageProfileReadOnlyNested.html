@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>My Page profile read-only nested fixture</title>
+</head>
+<body>
+  <div id="page-root">
+    <div id="outer-profile-ancestor">
+      <div id="profile-readonly-section">
+        <div>プロフィール</div>
+        <div>
+          <div class="value-rows">
+            <div id="person-in-charge">E2E PIC Value（テストフリガナ）</div>
+            <div id="display-name">表示名：E2E Display Value</div>
+          </div>
+          <button type="button"><span class="btn-label">編 集</span></button>
+        </div>
+      </div>
+      <div id="email-section">
+        <div>メールアドレス</div>
+        <div>user@example.com</div>
+        <button type="button">編 集</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

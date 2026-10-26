@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head><meta charset="utf-8" /><title>delete dialog fixture</title></head>
+<body>
+  <div id="dialog" role="dialog" aria-modal="true">
+    <div>顧客情報の削除</div>
+    <p id="target-message">E2E Target Customer Edited 様の情報をすべて削除します。データは復旧できません。よろしいですか？</p>
+    <label><input type="checkbox" id="agree" /> 同意する</label>
+    <button type="button" id="confirm-delete" disabled>削 除</button>
+    <button type="button" id="cancel">キャンセル</button>
+  </div>
+  <script>
+    const agree = document.getElementById('agree');
+    const confirmBtn = document.getElementById('confirm-delete');
+    agree?.addEventListener('change', () => {
+      if (confirmBtn) confirmBtn.disabled = !agree.checked;
+    });
+    confirmBtn?.addEventListener('click', () => {
+      const dialog = document.getElementById('dialog');
+      if (dialog) dialog.style.display = 'none';
+      history.pushState({}, '', '/customers');
+    });
+  </script>
+</body>
+</html>

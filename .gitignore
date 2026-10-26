@@ -6,10 +6,26 @@ node_modules/
 /blob-report/
 /playwright/.cache/
 /playwright/.auth/
-package-lock.json
 screenshot.jpg
 token.json
+token.json.bak
 /credentials/
 credentials.json
 /testmoToken.json
 results.xml
+results-backups/smoke-submission-state.json
+results-backups/results-smoke-submit-*.xml
+e2e-email-state.json
+e2e-email.lock
+e2e-change-email-state.json
+e2e-change-email.lock
+
+# macOS files
+.DS_Store
+
+# Local trace inspection
+/.trace-cirs-inspect/
+
+# Generated reporting checks and backups
+/tmp-part*-reporting-junit.xml
+/results-backups/

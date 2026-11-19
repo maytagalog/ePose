@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>Guest comparison share fixture</title>
+  <style>
+  body { margin: 0; font-family: sans-serif; }
+  section { min-height: 500px; margin: 40px 0; padding: 16px; border-top: 1px solid #ddd; }
+  h1 { margin: 24px; }
+  </style>
+</head>
+<body>
+  <h1>立位姿勢分析レポート（比較）</h1>
+  <div id="customer-name">Nikolas Fixture</div>
+  <section><h2>立位矢状面</h2></section>
+  <section><h2>立位前額面</h2></section>
+  <section><h2>姿勢タイプ</h2></section>
+  <section><h2>重心位置</h2></section>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const token = params.get('token') || '';
+    fetch('https://api-stg.epose.com/report/fetch_shared_public_comparison_report?token=' + encodeURIComponent(token));
+  </script>
+</body>
+</html>

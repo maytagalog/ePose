@@ -10,12 +10,14 @@ import {
     commitEmailConsumed,
     DEFAULT_DOMAIN,
     DEFAULT_LOCAL_BASE,
+    migrateRegistrationEmailStateIfNeeded,
+    resolveRegistrationAllocation,
     E2E_EMAIL_LOCK_FILENAME,
     E2E_EMAIL_STATE_FILENAME,
     lockFilePath,
     persistApplicationSubmitPending,
     persistOtpSubmitted,
-    persistPendingSelected,
+    persistPendingSelectedAtDotPosition,
     parseManualDotPosition,
     readEmailState,
     releaseExclusiveLock,
@@ -28,11 +30,14 @@ import {
 
 function makeBaseState(overrides: Partial<EmailState> = {}): EmailState {
     return {
-        schemaVersion: 2,
+        schemaVersion: 3,
         localBase: DEFAULT_LOCAL_BASE,
         domain: DEFAULT_DOMAIN,
         nextDotPosition: 0,
         highWaterMark: 0,
+        allocationPool: 'single_dot',
+        nextThreeDotIndex: 0,
+        threeDotHighWaterMark: 0,
         pendingVerification: null,
         ...overrides,
     };
@@ -68,6 +73,7 @@ test.describe('emailState helpers', () => {
                     nextDotPosition: 0,
                     highWaterMark: 0,
                     pendingVerification: {
+                        allocationPool: 'single_dot',
                         dotPosition: 2,
                         email: 'wrong@gmail.com',
                         phase: 'selected',
@@ -103,7 +109,7 @@ test.describe('emailState helpers', () => {
         fs.writeFileSync(statePath, JSON.stringify(invalid, null, 2));
 
         expect(() =>
-            persistPendingSelected(
+            persistPendingSelectedAtDotPosition(
                 statePath,
                 DEFAULT_LOCAL_BASE,
                 DEFAULT_DOMAIN,
@@ -130,7 +136,7 @@ test.describe('emailState helpers', () => {
         fs.writeFileSync(statePath, JSON.stringify(invalid, null, 2));
 
         expect(() =>
-            persistPendingSelected(
+            persistPendingSelectedAtDotPosition(
                 statePath,
                 DEFAULT_LOCAL_BASE,
                 DEFAULT_DOMAIN,
@@ -156,7 +162,7 @@ test.describe('emailState helpers', () => {
         fs.writeFileSync(statePath, JSON.stringify(invalid, null, 2));
 
         expect(() =>
-            persistPendingSelected(
+            persistPendingSelectedAtDotPosition(
                 statePath,
                 DEFAULT_LOCAL_BASE,
                 DEFAULT_DOMAIN,
@@ -179,6 +185,7 @@ test.describe('emailState helpers', () => {
                 nextDotPosition: 1,
                 highWaterMark: 1,
                 pendingVerification: {
+                    allocationPool: 'single_dot',
                     dotPosition: 1,
                     email,
                     phase: 'application_submit_pending',
@@ -203,7 +210,7 @@ test.describe('emailState helpers', () => {
 
         const runId = 'run-selected-clear';
         const email = buildEmail(DEFAULT_LOCAL_BASE, DEFAULT_DOMAIN, 0);
-        persistPendingSelected(
+        persistPendingSelectedAtDotPosition(
             statePath,
             DEFAULT_LOCAL_BASE,
             DEFAULT_DOMAIN,
@@ -230,7 +237,7 @@ test.describe('emailState helpers', () => {
 
         const runId = 'run-app-pending';
         const email = buildEmail(DEFAULT_LOCAL_BASE, DEFAULT_DOMAIN, 0);
-        persistPendingSelected(
+        persistPendingSelectedAtDotPosition(
             statePath,
             DEFAULT_LOCAL_BASE,
             DEFAULT_DOMAIN,
@@ -269,7 +276,7 @@ test.describe('emailState helpers', () => {
         const runId = 'run-consume';
         const dotPosition = 3;
         const email = buildEmail(DEFAULT_LOCAL_BASE, DEFAULT_DOMAIN, dotPosition);
-        persistPendingSelected(
+        persistPendingSelectedAtDotPosition(
             statePath,
             DEFAULT_LOCAL_BASE,
             DEFAULT_DOMAIN,
@@ -316,6 +323,7 @@ test.describe('emailState helpers', () => {
                 nextDotPosition: 8,
                 highWaterMark: 8,
                 pendingVerification: {
+                    allocationPool: 'single_dot',
                     dotPosition,
                     email,
                     phase: 'otp_submitted',
@@ -348,7 +356,7 @@ test.describe('emailState helpers', () => {
         writeEmailStateAtomic(statePath, makeBaseState());
 
         const runId = 'run-otp-order';
-        persistPendingSelected(
+        persistPendingSelectedAtDotPosition(
             statePath,
             DEFAULT_LOCAL_BASE,
             DEFAULT_DOMAIN,
@@ -426,18 +434,54 @@ test.describe('emailState helpers', () => {
         ).toThrow(/behind saved nextDotPosition/);
     });
 
-    test('exhaustion at nextDotPosition 30', () => {
+    test('exhaustion at nextDotPosition 30 yields three-dot allocation after migration', () => {
         const dir = initDir();
         const statePath = stateFilePath(dir);
-        writeEmailStateAtomic(
+        fs.writeFileSync(
             statePath,
-            makeBaseState({ nextDotPosition: 30, highWaterMark: 30 })
+            JSON.stringify(
+                {
+                    schemaVersion: 2,
+                    localBase: DEFAULT_LOCAL_BASE,
+                    domain: DEFAULT_DOMAIN,
+                    nextDotPosition: 30,
+                    highWaterMark: 30,
+                    pendingVerification: null,
+                },
+                null,
+                2
+            )
         );
 
+        const migration = migrateRegistrationEmailStateIfNeeded(
+            statePath,
+            DEFAULT_LOCAL_BASE,
+            DEFAULT_DOMAIN,
+            { repoRoot: dir }
+        );
+        expect(migration.migrated).toBe(true);
+        expect(migration.allocationPool).toBe('three_dot');
+        expect(fs.existsSync(path.join(dir, 'test-state/email/backups'))).toBe(true);
+
+        const migrationRepeat = migrateRegistrationEmailStateIfNeeded(
+            statePath,
+            DEFAULT_LOCAL_BASE,
+            DEFAULT_DOMAIN,
+            { repoRoot: dir }
+        );
+        expect(migrationRepeat.migrated).toBe(false);
+
         const state = readEmailState(statePath, DEFAULT_LOCAL_BASE, DEFAULT_DOMAIN);
-        expect(() =>
-            resolveDotPosition(state, undefined, DEFAULT_LOCAL_BASE.length)
-        ).toThrow(/All single-dot Gmail variants have already been consumed/);
+        const selection = resolveRegistrationAllocation(
+            state,
+            undefined,
+            undefined,
+            DEFAULT_LOCAL_BASE.length
+        );
+        expect(selection.pool).toBe('three_dot');
+        if (selection.pool === 'three_dot') {
+            expect(selection.threeDotIndex).toBe(0);
+        }
     });
 
     test('commit write failure leaves blocking otp_submitted pending', () => {
@@ -448,7 +492,7 @@ test.describe('emailState helpers', () => {
         const runId = 'run-commit-fail';
         const dotPosition = 0;
         const email = buildEmail(DEFAULT_LOCAL_BASE, DEFAULT_DOMAIN, dotPosition);
-        persistPendingSelected(
+        persistPendingSelectedAtDotPosition(
             statePath,
             DEFAULT_LOCAL_BASE,
             DEFAULT_DOMAIN,

@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>CIRS Response Details fixture</title>
+</head>
+<body>
+  <main role="main">
+    <div
+      id="record-detail-panel"
+      data-testid="cirs-record-detail"
+      data-customer-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+      data-customer-service-id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    >
+      <div>応対記録</div>
+      <textarea
+        role="textbox"
+        data-testid="cirs-response-input"
+      ></textarea>
+      <div data-testid="cirs-response-last-updated"></div>
+      <span
+        hidden
+        data-testid="cirs-response-save-status"
+        data-save-state="idle"
+        data-last-saved-at=""
+      ></span>
+    </div>
+  </main>
+  <script>
+    window.__rdAutosaveDelayMs = window.__rdAutosaveDelayMs ?? 80;
+    window.__rdAutosaveError = window.__rdAutosaveError ?? false;
+    window.__rdHangAutosaveSaving = window.__rdHangAutosaveSaving ?? false;
+    window.__rdStaleSavedTimestamp = window.__rdStaleSavedTimestamp ?? false;
+    window.__rdTimestampWithoutSavedState = window.__rdTimestampWithoutSavedState ?? false;
+    window.__rdPersistenceReturnsOldText = window.__rdPersistenceReturnsOldText ?? false;
+    window.__rdWrongCustomerOnDetail = window.__rdWrongCustomerOnDetail ?? false;
+    window.__rdMirrorResponseDetailApi = window.__rdMirrorResponseDetailApi ?? false;
+    window.__rdInputEventCount = 0;
+
+    const CUSTOMER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const RECORD_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const WRONG_CUSTOMER_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+
+    const detail = document.getElementById('record-detail-panel');
+    const input = document.querySelector('[data-testid="cirs-response-input"]');
+    const lastUpdated = document.querySelector('[data-testid="cirs-response-last-updated"]');
+    const saveStatus = document.querySelector('[data-testid="cirs-response-save-status"]');
+
+    const storageKey = 'cirs-response-fixture-value';
+
+    function applyDetailIdentity() {
+      const cid = window.__rdWrongCustomerOnDetail ? WRONG_CUSTOMER_ID : CUSTOMER_ID;
+      detail.setAttribute('data-customer-id', cid);
+      detail.setAttribute('data-customer-service-id', RECORD_ID);
+    }
+
+    function formatLastUpdated(iso) {
+      return '最終更新 : ' + iso;
+    }
+
+    function setSaveState(state, savedAt) {
+      saveStatus.setAttribute('data-save-state', state);
+      if (savedAt !== undefined) {
+        saveStatus.setAttribute('data-last-saved-at', savedAt);
+      }
+    }
+
+    function loadPersistedValue() {
+      if (window.__rdPersistenceReturnsOldText) {
+        return sessionStorage.getItem(storageKey + '-server') || '';
+      }
+      return sessionStorage.getItem(storageKey) || '';
+    }
+
+    function persistValue(value) {
+      sessionStorage.setItem(storageKey, value);
+      if (!sessionStorage.getItem(storageKey + '-server')) {
+        sessionStorage.setItem(storageKey + '-server', value);
+      }
+    }
+
+    function renderFromStorage() {
+      applyDetailIdentity();
+      const value = loadPersistedValue();
+      input.value = value;
+      if (value) {
+        const savedAt = sessionStorage.getItem(storageKey + '-saved-at') || '';
+        const persistedState = sessionStorage.getItem(storageKey + '-save-state') || 'saved';
+        setSaveState(persistedState, savedAt);
+        lastUpdated.textContent = savedAt ? formatLastUpdated(savedAt) : '';
+      } else {
+        setSaveState('idle', '');
+        lastUpdated.textContent = '';
+      }
+    }
+
+    let saveTimer = null;
+    input.addEventListener('input', function () {
+      window.__rdInputEventCount += 1;
+      sessionStorage.setItem('rd-input-event-count', String(window.__rdInputEventCount));
+      setSaveState('dirty', saveStatus.getAttribute('data-last-saved-at') || '');
+      if (saveTimer) clearTimeout(saveTimer);
+      saveTimer = setTimeout(function () {
+        if (window.__rdHangAutosaveSaving) {
+          setSaveState('saving', saveStatus.getAttribute('data-last-saved-at') || '');
+          return;
+        }
+        if (window.__rdAutosaveError) {
+          setSaveState('error', saveStatus.getAttribute('data-last-saved-at') || '');
+          return;
+        }
+        const priorSavedAt = saveStatus.getAttribute('data-last-saved-at') || '';
+        const now = new Date().toISOString();
+        const savedAt = window.__rdStaleSavedTimestamp && priorSavedAt ? priorSavedAt : now;
+        if (window.__rdTimestampWithoutSavedState) {
+          setSaveState('dirty', savedAt);
+          lastUpdated.textContent = formatLastUpdated(savedAt);
+          return;
+        }
+        persistValue(input.value);
+        sessionStorage.setItem(storageKey + '-saved-at', savedAt);
+        setSaveState('saved', savedAt);
+        lastUpdated.textContent = formatLastUpdated(savedAt);
+      }, window.__rdAutosaveDelayMs);
+    });
+
+    window.__rdGetInputEventCount = function () {
+      const stored = sessionStorage.getItem('rd-input-event-count');
+      if (stored !== null) {
+        return parseInt(stored, 10) || 0;
+      }
+      return window.__rdInputEventCount;
+    };
+
+    window.__rdSeedValue = function (text) {
+      input.value = text;
+      persistValue(text);
+      const now = new Date().toISOString();
+      sessionStorage.setItem(storageKey + '-saved-at', now);
+      sessionStorage.setItem(storageKey + '-save-state', 'saved');
+      setSaveState('saved', now);
+      lastUpdated.textContent = formatLastUpdated(now);
+    };
+
+    window.__rdSeedIdlePersistedValue = function (text) {
+      input.value = text;
+      persistValue(text);
+      sessionStorage.setItem(storageKey + '-server', text);
+      const now = new Date().toISOString();
+      sessionStorage.setItem(storageKey + '-saved-at', now);
+      sessionStorage.setItem(storageKey + '-save-state', 'idle');
+      setSaveState('idle', now);
+      lastUpdated.textContent = formatLastUpdated(now);
+    };
+
+    window.__rdSetServerOnlyValue = function (text) {
+      sessionStorage.setItem(storageKey + '-server', text);
+    };
+
+    function syncPath() {
+      const path =
+        '/customers/' +
+        (window.__rdWrongCustomerOnDetail ? WRONG_CUSTOMER_ID : CUSTOMER_ID) +
+        '/interaction-records/' +
+        RECORD_ID;
+      if (window.location.pathname !== path) {
+        window.history.replaceState({}, '', path);
+      }
+    }
+
+    function fetchResponseDetailForFixture() {
+      if (!window.__rdMirrorResponseDetailApi) {
+        return Promise.resolve();
+      }
+      return fetch('/customer_interaction_record/response_detail?customerServiceId=' + RECORD_ID);
+    }
+
+    syncPath();
+    renderFromStorage();
+    window.addEventListener('pageshow', function () {
+      renderFromStorage();
+      fetchResponseDetailForFixture();
+    });
+    fetchResponseDetailForFixture();
+  </script>
+</body>
+</html>

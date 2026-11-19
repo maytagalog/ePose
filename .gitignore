@@ -1,6 +1,8 @@
 
 # Playwright
 node_modules/
+/test-output/
+**/test-output/
 /test-results/
 /playwright-report/
 /blob-report/
@@ -9,16 +11,32 @@ node_modules/
 screenshot.jpg
 token.json
 token.json.bak
+token.backup.*.json
+token.json.bak-*
 /credentials/
 credentials.json
 /testmoToken.json
 results.xml
+results-part*.xml
+results-*-provenance.json
+results-publication-provenance.json
+results-analysisReportShareEmail.xml
+results-testmo-submit*.xml
+results-part2-derived*
+results-part2-testmo.json
+results-root-state.json
+testmo-*-resources.json
+/tmp-*.xml
+tmp-*.xml
 results-backups/smoke-submission-state.json
 results-backups/results-smoke-submit-*.xml
+results-backups/results-root-state.json
 e2e-email-state.json
 e2e-email.lock
 e2e-change-email-state.json
 e2e-change-email.lock
+/test-state/analysisReportDeletion/
+/test-state/email/
 
 # macOS files
 .DS_Store
@@ -29,3 +47,5 @@ e2e-change-email.lock
 # Generated reporting checks and backups
 /tmp-part*-reporting-junit.xml
 /results-backups/
+scripts/fixtures/*.local.txt
+scripts/fixtures/part2-2026-11-13-console-full.txt

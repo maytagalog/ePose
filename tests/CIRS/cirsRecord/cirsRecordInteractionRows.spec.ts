@@ -8,7 +8,7 @@ import { countInteractionRecordRows } from './cirsRecordInteractionRows';
 test('row container query ignores arrow wrapper-only divs', async ({ page }) => {
     await page.setContent(`
       <div id="host">
-        <div class="interaction-record-row">
+        <div class="interaction-record-row" data-testid="cirs-record-row" data-customer-service-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa">
           <div class="interaction-record-date-column">2026/10/25</div>
           <div class="interaction-record-author-column">Author A</div>
           <div class="interaction-record-arrow-column">

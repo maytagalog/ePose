@@ -38,7 +38,7 @@
   <div id="view-login" hidden>
     <input role="textbox" aria-label="メールアドレス" id="login-email" />
     <input role="textbox" aria-label="パスワード" id="login-password" />
-    <button type="button" id="login-submit">ログイン</button>
+    <button type="button" id="login-submit" disabled>ログイン</button>
     <div id="login-error" hidden>メールアドレスもしくはパスワードが正しくありません。</div>
   </div>
   <img role="img" alt="Menu" id="menu-button" />
@@ -163,6 +163,14 @@
       if (!res.ok) throw new Error('delete failed');
       route('/login');
     });
+
+    function syncLoginSubmitEnabled() {
+      const email = document.getElementById('login-email').value.trim();
+      const password = document.getElementById('login-password').value;
+      document.getElementById('login-submit').disabled = !(email && password);
+    }
+    document.getElementById('login-email').addEventListener('input', syncLoginSubmitEnabled);
+    document.getElementById('login-password').addEventListener('input', syncLoginSubmitEnabled);
 
     document.getElementById('login-submit').addEventListener('click', async () => {
       const res = await fetch(LOGIN_URL, { method: 'POST', body: '{}' });

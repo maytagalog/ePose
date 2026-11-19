@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>History network collector harness</title>
+</head>
+<body>
+  <div data-testid="analysis-report-history-list" id="history-list" style="height:240px;overflow:auto">
+    <div id="history-items"></div>
+  </div>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const CUSTOMER_ID = params.get('customerId') || 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const ACCOUNT_ID = params.get('accountId') || 'network-fixture-account';
+    const API_URL = params.get('apiUrl') || 'https://api-stg.epose.com/report/fetch_customer_report';
+    const scenario = params.get('scenario') || 'short17';
+    const PAGE_SIZE = 25;
+    const historyItems = document.getElementById('history-items');
+    const historyList = document.getElementById('history-list');
+    window.__pagesLoaded = 0;
+    window.__catalogRows = [];
+
+    function makeRow(i, customerId) {
+      const n = String(i).padStart(2, '0');
+      return {
+        id: `90000000-0000-4000-8000-0000000000${n}`,
+        analysisId: `80000000-0000-4000-8000-0000000000${n}`,
+        customerId,
+        createdAt: `2024-01-${n}T08:00:00.000Z`,
+        evaluationScore: 40 + i,
+      };
+    }
+
+    function scenarioPages() {
+      if (scenario === 'short17') {
+        return [Array.from({ length: 17 }, (_, i) => makeRow(i + 1, CUSTOMER_ID))];
+      }
+      if (scenario === 'full25_then_3') {
+        return [
+          Array.from({ length: 25 }, (_, i) => makeRow(i + 1, CUSTOMER_ID)),
+          Array.from({ length: 3 }, (_, i) => makeRow(i + 26, CUSTOMER_ID)),
+        ];
+      }
+      if (scenario === 'full25_then_empty') {
+        return [Array.from({ length: 25 }, (_, i) => makeRow(i + 1, CUSTOMER_ID)), []];
+      }
+      if (scenario === 'malformed') {
+        return [{ analysisId: 'x', customerId: CUSTOMER_ID }];
+      }
+      if (scenario === 'wrongCustomer') {
+        return [Array.from({ length: 3 }, (_, i) => makeRow(i + 1, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'))];
+      }
+      if (scenario === 'empty') {
+        return [[]];
+      }
+      return [[]];
+    }
+
+    const pages = scenarioPages();
+    let pageIndex = 0;
+
+    function renderRows(rows) {
+      historyItems.innerHTML = '';
+      rows.forEach((row) => {
+        const el = document.createElement('button');
+        el.type = 'button';
+        el.setAttribute('data-testid', 'cirs-analysis-item');
+        el.setAttribute('data-customer-id', row.customerId);
+        el.setAttribute('data-analysis-id', row.analysisId);
+        el.textContent = row.createdAt;
+        historyItems.appendChild(el);
+        window.__catalogRows.push(row);
+      });
+    }
+
+    async function fetchPage(isFirstPage) {
+      const body = {
+        accountId: ACCOUNT_ID,
+        customerId: CUSTOMER_ID,
+        pageSize: PAGE_SIZE,
+        sortType: 'DESC',
+        isFirstPage,
+      };
+      if (!isFirstPage && window.__lastRow) {
+        body.lastCreatedAt = window.__lastRow.createdAt;
+        body.lastId = window.__lastRow.id;
+      }
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const payload = await response.json();
+      await ingestResponsePayload(payload);
+      window.__pagesLoaded += 1;
+      pageIndex += 1;
+    }
+
+    async function ingestResponsePayload(payload) {
+      const rows = Array.isArray(payload) ? payload : [];
+      if (rows.length) {
+        window.__lastRow = rows[rows.length - 1];
+        renderRows(rows);
+      }
+    }
+
+  void (async () => {
+    if (scenario === 'noFetch') {
+      setTimeout(() => {
+        historyList.setAttribute('data-list-ready', 'true');
+      }, 50);
+      return;
+    }
+    if (scenario === 'delayedFirstRequest') {
+      await new Promise((resolve) => setTimeout(resolve, 1200));
+    }
+    await fetchPage(true);
+    setTimeout(() => {
+      historyList.setAttribute('data-list-ready', 'true');
+    }, scenario === 'earlyResponse' || scenario === 'delayedFirstRequest' ? 2500 : 50);
+  })();
+
+    historyList.addEventListener('scroll', async () => {
+      if (pageIndex >= pages.length) {
+        return;
+      }
+      const nearBottom = historyList.scrollTop + historyList.clientHeight >= historyList.scrollHeight - 8;
+      if (!nearBottom) {
+        return;
+      }
+      if (window.__loadingNext) {
+        return;
+      }
+      window.__loadingNext = true;
+      try {
+        await fetchPage(false);
+      } finally {
+        window.__loadingNext = false;
+      }
+    });
+  </script>
+</body>
+</html>

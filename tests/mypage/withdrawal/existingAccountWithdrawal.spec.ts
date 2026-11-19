@@ -69,6 +69,7 @@ function createEvidence(
 
 test('Existing account: withdrawal (stop renewal + delete + rejected login)', async ({
     page,
+    browser,
 }, testInfo) => {
     test.setTimeout(900000);
 
@@ -86,5 +87,6 @@ test('Existing account: withdrawal (stop renewal + delete + rejected login)', as
 
     await runWithdrawalAndVerify(page, account, evidence, {
         renewalAlreadyDisabled,
+        browser,
     });
 });

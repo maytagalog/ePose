@@ -1,4 +1,13 @@
-import { expect, test, type Locator, type Page, type Response } from '@playwright/test';
+import {
+    expect,
+    test,
+    type Browser,
+    type BrowserContext,
+    type Locator,
+    type Page,
+    type Response,
+} from '@playwright/test';
+import { newStagingSmokeBrowserContextOptions } from '../../e2e/shared/stagingSmokeBrowserContext';
 import type { CustomerFlowEvidence } from '../../accountRegistration/customerFlow';
 import type { SmokeAccountRef } from '../changeEmail/myPageChangeEmailFlow';
 import {
@@ -16,10 +25,28 @@ import {
     subscriptionPeriodIsActivePaidCurrent,
 } from '../../accountPayment/creditCard/planPurchaseFlow';
 import { STG_APP_ORIGIN } from '../../referralCoupon/referralCouponFlow';
+import {
+    pickResponseCorrelationHeaders,
+    sanitizeApiResponseBody,
+} from '../../e2e/shared/smokeDiagnosticSanitize';
+import { summarizeSubscriptionForDiagnostics } from '../../e2e/shared/withdrawalSubscriptionDiagnostics';
 
 const ACTION_TIMEOUT_MS = 15000;
 const WITHDRAWAL_HYDRATION_TIMEOUT_MS = 60000;
 const LOGIN_REDIRECT_TIMEOUT_MS = 90000;
+/** Rejected-login probe after account deletion (UI actions only). */
+const REJECTED_LOGIN_UI_TIMEOUT_MS = ACTION_TIMEOUT_MS;
+const REJECTED_LOGIN_API_TIMEOUT_MS = WITHDRAWAL_HYDRATION_TIMEOUT_MS;
+
+function logRejectedLoginBoundary(
+    step: string,
+    payload?: Record<string, unknown>
+): void {
+    console.log(
+        'WITHDRAWAL_REJECTED_LOGIN_BOUNDARY',
+        JSON.stringify({ step, ...(payload ?? {}) })
+    );
+}
 
 export const STG_LOGIN_URL = 'https://app-stg.epose.com/login';
 export const STG_MY_PAGE_URL = 'https://app-stg.epose.com/my-page';
@@ -81,6 +108,12 @@ export type AuthLoginErrorBody = {
 export type WithdrawalFlowOptions = {
     /** Fixture seam: expected app origin (default {@link STG_APP_ORIGIN}). */
     pageOrigin?: string;
+    /** Explicit login URL for fresh-context rejected-login probe (default staging /login). */
+    loginUrl?: string;
+    /** Required for post-deletion rejected-login verification (isolated browser context). */
+    browser?: Browser;
+    /** Install fixture/API routes on the fresh rejected-login context (same as main session). */
+    prepareRejectedLoginContext?: (context: BrowserContext) => Promise<void>;
     /**
      * Standalone only: verified at start — renewal already cancelled (`cancelAtPeriodEnd`).
      * Skips the paid-plan blocking dialog + stop-renewal sequence; fails if dialog appears unexpectedly.
@@ -88,10 +121,42 @@ export type WithdrawalFlowOptions = {
     renewalAlreadyDisabled?: boolean;
 };
 
+export type WithdrawalAccountDeletionEvidence = {
+    accountEmail: string;
+    finalPathname: string;
+    deleteApiObserved: boolean;
+    loginRouteReached: boolean;
+};
+
+export type RejectedLoginVerificationEvidence = {
+    loginUrl: string;
+    httpStatus: number;
+    errorCode: string;
+    invalidCredentialsMessageVisible: boolean;
+    remainedOnLoginRoute: boolean;
+    verificationMode: 'fresh_browser_context';
+};
+
+export type WithdrawalCancelAutoRenewalDiagnostics = {
+    httpStatus: number;
+    responseBodySanitized: string;
+    requestUrl: string;
+    responseHeaders: Record<string, string>;
+    subscriptionBeforeStop: ReturnType<
+        typeof import('../../e2e/shared/withdrawalSubscriptionDiagnostics').summarizeSubscriptionForDiagnostics
+    >;
+};
+
 export class WithdrawalFlowError extends Error {
-    constructor(message: string) {
+    readonly cancelAutoRenewalDiagnostics?: WithdrawalCancelAutoRenewalDiagnostics;
+
+    constructor(
+        message: string,
+        options?: { cancelAutoRenewalDiagnostics?: WithdrawalCancelAutoRenewalDiagnostics }
+    ) {
         super(message);
         this.name = 'WithdrawalFlowError';
+        this.cancelAutoRenewalDiagnostics = options?.cancelAutoRenewalDiagnostics;
     }
 }
 
@@ -310,6 +375,13 @@ async function stopAutoRenewalOnContract(page: Page): Promise<{
     renewalStopAttempted: boolean;
     renewalStopVerified: boolean;
 }> {
+    const subscriptionBodyBeforeStop = await captureContractSubscriptionBodyForTrigger(
+        page,
+        () => page.reload({ waitUntil: 'domcontentloaded' }),
+        WITHDRAWAL_HYDRATION_TIMEOUT_MS
+    );
+    const subscriptionBeforeStop = summarizeSubscriptionForDiagnostics(subscriptionBodyBeforeStop);
+
     await assertContractInformationReady(page);
     await expect(page.getByText(CONTRACT_AUTO_RENEWAL_SECTION_LABEL, { exact: true })).toBeVisible({
         timeout: ACTION_TIMEOUT_MS,
@@ -334,9 +406,22 @@ async function stopAutoRenewalOnContract(page: Page): Promise<{
         .waitForResponse(isCancelAutoRenewalPatch, { timeout: WITHDRAWAL_HYDRATION_TIMEOUT_MS })
         .then(async (res) => {
             if (res.status() < 200 || res.status() >= 300) {
-                const snippet = (await res.text().catch(() => '')).slice(0, 500);
+                const rawBody = await res.text().catch(() => '');
+                const cancelAutoRenewalDiagnostics: WithdrawalCancelAutoRenewalDiagnostics = {
+                    httpStatus: res.status(),
+                    responseBodySanitized: sanitizeApiResponseBody(rawBody),
+                    requestUrl: res.url(),
+                    responseHeaders: pickResponseCorrelationHeaders(res.headers()),
+                    subscriptionBeforeStop,
+                };
+                console.log(
+                    'WITHDRAWAL_CANCEL_AUTO_RENEWAL_FAILED',
+                    JSON.stringify(cancelAutoRenewalDiagnostics)
+                );
+                const snippet = sanitizeApiResponseBody(rawBody).slice(0, 500);
                 throw new WithdrawalFlowError(
-                    `PATCH ${PATCH_CANCEL_AUTO_RENEWAL_URL} returned HTTP ${res.status()}${snippet ? `: ${snippet}` : ''}`
+                    `PATCH ${PATCH_CANCEL_AUTO_RENEWAL_URL} returned HTTP ${res.status()}${snippet ? `: ${snippet}` : ''}`,
+                    { cancelAutoRenewalDiagnostics }
                 );
             }
             return readResponseJsonSafely(res, 'cancel_auto_renewal PATCH');
@@ -466,41 +551,143 @@ async function submitFinalWithdrawalDelete(
     await expect(page).toHaveURL(/\/login/, { timeout: LOGIN_REDIRECT_TIMEOUT_MS });
 }
 
+/** Session-invalid overlay on /login after account deletion (not withdrawal confirm modals). */
+export function loginSessionExpiredDialogScope(page: Page): Locator {
+    return page
+        .getByRole('dialog')
+        .filter({ has: page.getByRole('button', { name: 'とじる', exact: true }) })
+        .filter({ hasNot: page.getByText(WITHDRAWAL_FINAL_CONFIRM_MODAL_TITLE, { exact: true }) });
+}
+
+/**
+ * Dismisses the session-expired dialog on /login when present.
+ * Scoped to role=dialog; does not use page-wide とじる (avoids unrelated modals).
+ */
+export async function dismissLoginSessionExpiredDialogIfPresent(page: Page): Promise<boolean> {
+    const dialogs = loginSessionExpiredDialogScope(page);
+    const count = await dialogs.count().catch(() => 0);
+    if (count === 0) {
+        return false;
+    }
+    const dialog = dialogs.first();
+    if (!(await dialog.isVisible().catch(() => false))) {
+        return false;
+    }
+    logRejectedLoginBoundary('dismiss_session_expired_dialog');
+    const closeButton = dialog.getByRole('button', { name: 'とじる', exact: true });
+    await expect(closeButton).toBeVisible({ timeout: REJECTED_LOGIN_UI_TIMEOUT_MS });
+    await closeButton.click({ timeout: REJECTED_LOGIN_UI_TIMEOUT_MS });
+    const emailField = page.getByRole('textbox', { name: 'メールアドレス' });
+    await expect(emailField).toBeEditable({ timeout: REJECTED_LOGIN_UI_TIMEOUT_MS });
+    if (await dialog.isVisible().catch(() => false)) {
+        await page.keyboard.press('Escape');
+        await expect(dialog).toBeHidden({ timeout: 5000 });
+    }
+    return true;
+}
+
+export async function assertRejectedLoginInvalidCredentials(
+    page: Page,
+    account: SmokeAccountRef
+): Promise<Omit<RejectedLoginVerificationEvidence, 'verificationMode' | 'loginUrl'>> {
+    const emailField = page.getByRole('textbox', { name: 'メールアドレス' });
+    const passwordField = page.getByRole('textbox', { name: 'パスワード' });
+    await expect(emailField).toBeVisible({ timeout: REJECTED_LOGIN_UI_TIMEOUT_MS });
+    await expect(passwordField).toBeVisible({ timeout: REJECTED_LOGIN_UI_TIMEOUT_MS });
+    await expect(emailField).toBeEditable({ timeout: REJECTED_LOGIN_UI_TIMEOUT_MS });
+    await expect(passwordField).toBeEditable({ timeout: REJECTED_LOGIN_UI_TIMEOUT_MS });
+
+    logRejectedLoginBoundary('fill_email');
+    await emailField.fill(account.email, { timeout: REJECTED_LOGIN_UI_TIMEOUT_MS });
+    logRejectedLoginBoundary('fill_password');
+    await passwordField.fill(account.password, { timeout: REJECTED_LOGIN_UI_TIMEOUT_MS });
+
+    const loginButton = page.getByRole('button', { name: 'ログイン', exact: true });
+    await expect(loginButton).toBeVisible({ timeout: REJECTED_LOGIN_UI_TIMEOUT_MS });
+    await expect(loginButton).toBeEnabled({ timeout: REJECTED_LOGIN_UI_TIMEOUT_MS });
+
+    const loginResponsePromise = page.waitForResponse(isAuthLoginPost, {
+        timeout: REJECTED_LOGIN_API_TIMEOUT_MS,
+    });
+
+    logRejectedLoginBoundary('login_click');
+    let loginResponse: Response;
+    try {
+        await loginButton.click({ timeout: REJECTED_LOGIN_UI_TIMEOUT_MS });
+        loginResponse = await loginResponsePromise;
+    } catch (error) {
+        await loginResponsePromise.catch(() => undefined);
+        throw error;
+    }
+
+    const loginBody = await readResponseJsonSafely(loginResponse, 'auth/login POST (rejected)');
+    assertInvalidCredentialsLoginResponse(loginResponse.status(), loginBody);
+
+    logRejectedLoginBoundary('invalid_credentials_message');
+    await expect(page.getByText(LOGIN_INVALID_CREDENTIALS_MESSAGE, { exact: true })).toBeVisible({
+        timeout: REJECTED_LOGIN_UI_TIMEOUT_MS,
+    });
+    await expect(page).toHaveURL(/\/login/, { timeout: REJECTED_LOGIN_UI_TIMEOUT_MS });
+    await expect(page).not.toHaveURL(/\/customers/, { timeout: REJECTED_LOGIN_UI_TIMEOUT_MS });
+    logRejectedLoginBoundary('invalid_credentials_verified');
+    return {
+        httpStatus: loginResponse.status(),
+        errorCode: LOGIN_REJECTED_CREDENTIALS_ERROR_CODE,
+        invalidCredentialsMessageVisible: true,
+        remainedOnLoginRoute: true,
+    };
+}
+
+/**
+ * Same-page rejected-login probe (legacy). Prefer {@link verifyRejectedLoginInFreshContext}.
+ */
 export async function assertRejectedLoginAfterWithdrawal(
     page: Page,
     account: SmokeAccountRef
 ): Promise<void> {
-    await expect(page).toHaveURL(/\/login/, { timeout: ACTION_TIMEOUT_MS });
+    logRejectedLoginBoundary('login_route');
+    await expect(page).toHaveURL(/\/login/, { timeout: REJECTED_LOGIN_UI_TIMEOUT_MS });
+    await dismissLoginSessionExpiredDialogIfPresent(page);
+    await assertRejectedLoginInvalidCredentials(page, account);
+    logRejectedLoginBoundary('verified');
+}
 
-    const dismiss = page.getByRole('button', { name: 'とじる', exact: true });
-    if (await dismiss.isVisible().catch(() => false)) {
-        await dismiss.click();
-        await expect(dismiss).toBeHidden({ timeout: ACTION_TIMEOUT_MS });
+export async function verifyRejectedLoginInFreshContext(
+    browser: Browser,
+    account: SmokeAccountRef,
+    options?: {
+        loginUrl?: string;
+        /** Optional route/install hook on the isolated context (fixtures). */
+        prepareContext?: (context: BrowserContext) => Promise<void>;
     }
-
-    const emailField = page.getByRole('textbox', { name: 'メールアドレス' });
-    const passwordField = page.getByRole('textbox', { name: 'パスワード' });
-    await expect(emailField).toBeVisible({ timeout: ACTION_TIMEOUT_MS });
-    await expect(passwordField).toBeVisible({ timeout: ACTION_TIMEOUT_MS });
-
-    await emailField.fill(account.email);
-    await passwordField.fill(account.password);
-
-    const loginResponsePromise = page.waitForResponse(isAuthLoginPost, {
-        timeout: WITHDRAWAL_HYDRATION_TIMEOUT_MS,
-    });
-
-    await page.getByRole('button', { name: 'ログイン', exact: true }).click();
-
-    const loginResponse = await loginResponsePromise;
-    const loginBody = await readResponseJsonSafely(loginResponse, 'auth/login POST (rejected)');
-    assertInvalidCredentialsLoginResponse(loginResponse.status(), loginBody);
-
-    await expect(page.getByText(LOGIN_INVALID_CREDENTIALS_MESSAGE, { exact: true })).toBeVisible({
-        timeout: WITHDRAWAL_HYDRATION_TIMEOUT_MS,
-    });
-    await expect(page).toHaveURL(/\/login/);
-    await expect(page).not.toHaveURL(/\/customers/);
+): Promise<RejectedLoginVerificationEvidence> {
+    const loginUrl = options?.loginUrl ?? STG_LOGIN_URL;
+    const context = await browser.newContext(newStagingSmokeBrowserContextOptions());
+    if (options?.prepareContext) {
+        await options.prepareContext(context);
+    }
+    const page = await context.newPage();
+    try {
+        logRejectedLoginBoundary('fresh_context_open', { loginUrl });
+        await page.goto(loginUrl, { waitUntil: 'domcontentloaded' });
+        logRejectedLoginBoundary('fresh_context_login_route', {
+            pathname: new URL(page.url()).pathname,
+        });
+        const core = await assertRejectedLoginInvalidCredentials(page, account);
+        const evidence: RejectedLoginVerificationEvidence = {
+            loginUrl,
+            verificationMode: 'fresh_browser_context',
+            ...core,
+        };
+        logRejectedLoginBoundary('fresh_context_verified', {
+            httpStatus: evidence.httpStatus,
+            errorCode: evidence.errorCode,
+        });
+        return evidence;
+    } finally {
+        await context.close().catch(() => undefined);
+        logRejectedLoginBoundary('fresh_context_closed');
+    }
 }
 
 export type WithdrawalBoundaryEvidence = {
@@ -515,7 +702,10 @@ export type WithdrawalBoundaryEvidence = {
 export type WithdrawalRunResult = {
     renewalStopped: boolean;
     finalPathname: string;
+    accountDeletionVerified: boolean;
     rejectedLoginVerified: boolean;
+    accountDeletionEvidence?: WithdrawalAccountDeletionEvidence;
+    rejectedLoginEvidence?: RejectedLoginVerificationEvidence;
     boundaries: WithdrawalBoundaryEvidence;
 };
 
@@ -536,6 +726,8 @@ export async function runWithdrawalAndVerify(
         finalConfirmationReached: false,
         finalDeleteAttempted: false,
     };
+    let accountDeletionEvidence: WithdrawalAccountDeletionEvidence | undefined;
+    let rejectedLoginEvidence: RejectedLoginVerificationEvidence | undefined;
 
     try {
         if (!options?.renewalAlreadyDisabled) {
@@ -630,17 +822,62 @@ export async function runWithdrawalAndVerify(
             }
         });
 
-        await test.step('withdrawal: rejected login on withdrawn credentials', async () => {
-            boundaries.lastBoundary = 'withdrawal:rejected-login';
-            await assertRejectedLoginAfterWithdrawal(page, account);
+        await test.step('withdrawal: account deletion evidence on login route', async () => {
+            boundaries.lastBoundary = 'withdrawal:account-deletion-verified';
+            await expect(page).toHaveURL(/\/login/, { timeout: LOGIN_REDIRECT_TIMEOUT_MS });
+            accountDeletionEvidence = {
+                accountEmail: account.email,
+                finalPathname: new URL(page.url()).pathname.replace(/\/$/, '') || '/',
+                deleteApiObserved: boundaries.finalDeleteAttempted,
+                loginRouteReached: true,
+            };
+            console.log(
+                'WITHDRAWAL_ACCOUNT_DELETION_VERIFIED',
+                JSON.stringify(accountDeletionEvidence)
+            );
+            if (evidence) {
+                await evidence.attachJson(
+                    'WITHDRAWAL_ACCOUNT_DELETION_VERIFIED',
+                    accountDeletionEvidence
+                );
+            }
+        });
+
+        await test.step('withdrawal: rejected login (fresh browser context)', async () => {
+            boundaries.lastBoundary = 'withdrawal:rejected-login-fresh-context';
+            const browser = options?.browser ?? page.context().browser();
+            if (!browser) {
+                throw new WithdrawalFlowError(
+                    'Rejected-login verification requires Playwright browser for a fresh unauthenticated context.'
+                );
+            }
+            const loginUrl =
+                options?.loginUrl ??
+                (options?.pageOrigin
+                    ? `${options.pageOrigin.replace(/\/$/, '')}/login`
+                    : STG_LOGIN_URL);
+            rejectedLoginEvidence = await verifyRejectedLoginInFreshContext(browser, account, {
+                loginUrl,
+                prepareContext: options?.prepareRejectedLoginContext,
+            });
+            console.log('WITHDRAWAL_REJECTED_LOGIN_VERIFIED', JSON.stringify(rejectedLoginEvidence));
+            if (evidence) {
+                await evidence.attachJson(
+                    'WITHDRAWAL_REJECTED_LOGIN_VERIFIED',
+                    rejectedLoginEvidence
+                );
+            }
         });
     } catch (err) {
-        const detail = {
+        const detail: Record<string, unknown> = {
             ...boundaries,
             renewalStopped,
             accountEmail: account.email,
             currentUrl: page.url(),
         };
+        if (err instanceof WithdrawalFlowError && err.cancelAutoRenewalDiagnostics) {
+            detail.cancelAutoRenewalDiagnostics = err.cancelAutoRenewalDiagnostics;
+        }
         console.log('WITHDRAWAL_FLOW_FAILED', JSON.stringify(detail));
         if (evidence) {
             await evidence.attachJson('WITHDRAWAL_FLOW_FAILED', detail).catch(() => undefined);
@@ -656,9 +893,11 @@ export async function runWithdrawalAndVerify(
     const summary = {
         accountEmail: account.email,
         renewalStopped,
+        accountDeletionVerified: true,
         rejectedLoginVerified: true,
         finalPathname,
         boundaries,
+        rejectedLoginVerificationMode: 'fresh_browser_context' as const,
     };
     console.log('WITHDRAWAL_FLOW_VERIFIED', JSON.stringify(summary));
     if (evidence) {
@@ -668,7 +907,16 @@ export async function runWithdrawalAndVerify(
     return {
         renewalStopped,
         finalPathname,
+        accountDeletionVerified: true,
         rejectedLoginVerified: true,
+        accountDeletionEvidence:
+            accountDeletionEvidence ?? {
+                accountEmail: account.email,
+                finalPathname,
+                deleteApiObserved: boundaries.finalDeleteAttempted,
+                loginRouteReached: true,
+            },
+        rejectedLoginEvidence,
         boundaries,
     };
 }

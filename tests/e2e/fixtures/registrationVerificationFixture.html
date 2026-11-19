@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>Registration verification fixture</title>
+</head>
+<body>
+  <div id="verification-view">
+    <input type="text" id="email-readonly" disabled aria-label="メールアドレス" />
+    <input type="text" id="otp-field" />
+    <button type="button" id="otp-send" disabled>送 信</button>
+    <div id="session-ok" hidden>SESSION_OK</div>
+  </div>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const expectedEmail = params.get('email') ?? '';
+    const emailInput = document.getElementById('email-readonly');
+    emailInput.value = expectedEmail;
+    const otp = document.getElementById('otp-field');
+    const send = document.getElementById('otp-send');
+    otp.addEventListener('input', () => {
+      send.disabled = !otp.value;
+    });
+    send.addEventListener('click', () => {
+      if (window.__rejectOtp) return;
+      document.getElementById('session-ok').hidden = false;
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>History fixture</title>
+  <style>
+    [hidden] { display: none !important; }
+    .ant-spin-spinning { display: inline-block; width: 20px; height: 20px; border: 2px solid #1890ff; border-radius: 50%; }
+    [data-testid="analysis-report-history-open-hidden"] { position: absolute; left: -9999px; }
+  </style>
+</head>
+<body>
+  <main id="app">
+    <div id="report-panel">
+      <div data-testid="analysis-report" id="report-root"
+           data-customer-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+           data-analysis-id="cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+           data-load-state="ready">
+        <div data-testid="analysis-report-header" style="display:block">
+          <div data-testid="analysis-report-header-field" data-field="name">Fixture Customer</div>
+          <div data-testid="analysis-report-header-field" data-field="height" data-value="170">170</div>
+          <div data-testid="analysis-report-header-field" data-field="age" data-value="30">30</div>
+          <div data-testid="analysis-report-header-field" data-field="sex" data-value="male">M</div>
+          <div data-testid="analysis-report-header-field" data-field="measuredAt" data-value="2026-01-15T08:00:00.000Z">2026/01/15</div>
+        </div>
+        <div data-testid="analysis-report-summary">AI判定 スコア</div>
+        <div data-testid="analysis-report-score">88</div>
+      </div>
+      <button type="button" data-testid="analysis-report-actions-toggle" id="actions-toggle">⋯</button>
+      <div data-testid="analysis-report-actions-menu" data-report-view="single" id="actions-menu" hidden>
+        <button type="button" data-testid="analysis-report-history-open" id="history-visible">過去のレポート</button>
+        <button type="button" data-testid="analysis-report-history-open" id="history-hidden" hidden>過去のレポート hidden</button>
+      </div>
+    </div>
+    <div id="history-panel" hidden>
+      <div data-testid="analysis-report-history-list" id="history-list">
+        <div data-testid="analysis-report-history-loading" id="history-loading" hidden>
+          <span class="ant-spin-spinning" id="history-spinner"></span>
+        </div>
+        <div id="history-items"></div>
+      </div>
+    </div>
+  </main>
+  <script>
+    const CUSTOMER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const ANALYSIS_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+
+    function showReport() {
+      document.getElementById('report-panel').hidden = false;
+      document.getElementById('history-panel').hidden = true;
+      document.getElementById('actions-menu').hidden = true;
+      history.pushState({}, '', `/customers/${CUSTOMER_ID}/reports/${ANALYSIS_ID}`);
+    }
+
+    function setHistoryLoading(active) {
+      const spinner = document.getElementById('history-spinner');
+      const loading = document.getElementById('history-loading');
+      if (active) {
+        loading.hidden = false;
+        spinner.classList.add('ant-spin-spinning');
+      } else {
+        spinner.classList.remove('ant-spin-spinning');
+        loading.hidden = true;
+      }
+    }
+
+    function openHistoryFromMenu() {
+      document.getElementById('report-panel').hidden = true;
+      document.getElementById('history-panel').hidden = false;
+      document.getElementById('actions-menu').hidden = true;
+      const host = document.getElementById('history-items');
+      host.innerHTML = '';
+      const customer = window.__arhWrongHistoryCustomer ? 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' : CUSTOMER_ID;
+      history.pushState({}, '', `/customers/${customer}/posture-analysis-report`);
+      if (window.__arhHistoryEmpty) {
+        const empty = document.createElement('div');
+        empty.setAttribute('data-testid', 'cirs-analysis-empty');
+        empty.textContent = 'empty';
+        host.appendChild(empty);
+        return;
+      }
+      if (window.__arhHistoryLoading) {
+        setHistoryLoading(true);
+        window.setTimeout(() => {
+          setHistoryLoading(false);
+          renderHistoryRows(host);
+        }, 300);
+        return;
+      }
+      renderHistoryRows(host);
+    }
+
+    function renderHistoryRows(host) {
+      if (window.__arhOmitSourceRow) {
+        const decoy = document.createElement('button');
+        decoy.type = 'button';
+        decoy.setAttribute('data-testid', 'cirs-analysis-item');
+        decoy.setAttribute('data-customer-id', CUSTOMER_ID);
+        decoy.setAttribute('data-analysis-id', 'dddddddd-dddd-4ddd-8ddd-dddddddddddd');
+        host.appendChild(decoy);
+        return;
+      }
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.setAttribute('data-testid', 'cirs-analysis-item');
+      row.setAttribute('data-customer-id', CUSTOMER_ID);
+      row.setAttribute(
+        'data-analysis-id',
+        window.__arhWrongAnalysisOnRow ? 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' : ANALYSIS_ID
+      );
+      row.textContent = 'history-row';
+      row.addEventListener('click', () => showReport());
+      host.appendChild(row);
+    }
+
+    document.getElementById('actions-toggle').addEventListener('click', () => {
+      const menu = document.getElementById('actions-menu');
+      menu.hidden = !menu.hidden;
+    });
+    document.getElementById('history-visible').addEventListener('click', openHistoryFromMenu);
+
+    showReport();
+  </script>
+</body>
+</html>

@@ -60,6 +60,7 @@ test('existing account: CIRS record creation and list navigation', async ({ page
     try {
         const ctx = await test.step('cirs record creation and list navigation', async () => {
             return runCirsRecordCreationAndListNavigation(page, {
+                accountEmail: account.email,
                 onEvidence: (evidence) => {
                     latestEvidence = evidence;
                 },

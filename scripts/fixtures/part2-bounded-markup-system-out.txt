@@ -1,0 +1,4 @@
+PART2_RUN_COMPLETED {"featureOutcomes":{"login":"passed","limitDialog":"passed","cirsRecordNavigation":"passed","logout":"passed"}}
+PART2_ANALYSIS_REPORT_VERIFIED {"deletionMode":"off","combinedPassed":true,"runOutputRoot":"test-output/analysisReportFull/fixture-bounded-markup","featureStages":{"login":"Skipped","preflight":"Passed","reportView":"Passed","displaySettings":"Passed","shareQr":"Passed","shareEmail":"Passed","reportPdf":"Skipped","reportHistory":"Passed","reportDeletion":"Skipped"}}
+<!-- regression guard: accidental inline testsuite-like markup must not explode enrichment -->
+<testsuite name="e2e/accidental-inline.spec.ts" tests="9999" failures="0" time="9999"><testcase name="noise" time="9999"/></testsuite>

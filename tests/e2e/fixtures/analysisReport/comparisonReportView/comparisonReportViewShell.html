@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>Comparison Report View fixture</title>
+  <style>
+    [hidden] { display: none !important; }
+    .fixture-sticky-header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 64px;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      background: #fff;
+      border-bottom: 1px solid #eee;
+    }
+    body { margin: 0; padding-top: 64px; }
+    #comparison-root section { min-height: 120px; margin: 24px 0; border: 1px solid #ddd; padding: 8px; }
+    #comparison-root { min-height: 2400px; }
+    .comparison-report-selector-row { margin: 16px 0 24px; max-width: 360px; }
+    .ant-select { width: 100%; font-size: 14px; }
+    .ant-select-selector {
+      position: relative;
+      min-height: 40px;
+      border: 1px solid #d9d9d9;
+      border-radius: 6px;
+      padding: 4px 8px;
+      cursor: pointer;
+      background: #fff;
+    }
+    .ant-select-selection-item {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 8px;
+      pointer-events: auto;
+      z-index: 2;
+    }
+    .fixture-select-date { white-space: nowrap; }
+    .ant-select-selection-search { display: block; width: 100%; }
+    .ant-select-selection-search-input {
+      width: 100%;
+      height: 32px;
+      border: 0;
+      outline: none;
+      background: transparent;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .analysis-report-comparison-options-popup {
+      position: fixed;
+      top: 80px;
+      left: 80px;
+      z-index: 2000;
+      background: #fff;
+      border: 1px solid #ccc;
+      padding: 8px;
+      max-height: 320px;
+      overflow: auto;
+    }
+    .ant-select-item-option { padding: 8px; cursor: pointer; }
+    .ant-select-item-option-disabled { opacity: 0.4; pointer-events: none; }
+    .comparison-section-title { font-weight: 600; margin-bottom: 8px; }
+  </style>
+</head>
+<body>
+  <header class="ant-layout-header hide-on-print fixture-sticky-header">
+    <span>ログイン中：</span>
+    <span>fixture user</span>
+  </header>
+  <div id="single-view">
+    <div data-testid="analysis-report-header">
+      <div data-testid="analysis-report-header-field" data-field="name">Fixture Customer</div>
+      <div data-testid="analysis-report-header-field" data-field="height" data-value="170">170</div>
+      <div data-testid="analysis-report-header-field" data-field="age" data-value="30">30</div>
+      <div data-testid="analysis-report-header-field" data-field="sex" data-value="male">M</div>
+      <div data-testid="analysis-report-header-field" data-field="measuredAt" data-value="2026-01-15T08:00:00.000Z">2026/01/15</div>
+    </div>
+    <div data-testid="analysis-report" data-analysis-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001" data-customer-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" data-load-state="ready">
+      <div data-testid="analysis-report-summary">fixture summary</div>
+      <div data-testid="analysis-report-score">88</div>
+    </div>
+    <button type="button" data-testid="analysis-report-compare-open">比較</button>
+  </div>
+
+  <div id="comparison-view" hidden>
+    <div id="comparison-page-shell">
+      <div>
+        <div>立位姿勢分析レポート（比較）</div>
+        <span role="button" tabindex="0" data-testid="analysis-report-compare-exit">終了</span>
+      </div>
+      <div id="comparison-root" data-testid="analysis-report-comparison" data-customer-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa">
+      <div class="comparison-report-selector-row">
+        <div class="analysis-report-comparison-options ant-select ant-select-single">
+          <div class="ant-select-selector" role="combobox" tabindex="0" aria-expanded="false">
+            <span class="ant-select-selection-item">
+              <span>10回目</span>
+              <div class="fixture-select-date">2025/10/13&nbsp;&nbsp;&nbsp;14:22</div>
+            </span>
+            <span class="ant-select-selection-search">
+              <input
+                type="search"
+                readonly
+                role="combobox"
+                aria-expanded="false"
+                class="ant-select-selection-search-input"
+                data-testid="analysis-report-comparison-selector"
+                data-comparison-slot="left"
+              />
+            </span>
+          </div>
+        </div>
+      </div>
+      <p id="comparison-loading" data-testid="analysis-report-comparison-loading" data-comparison-slot="left" hidden>loading</p>
+      <div data-testid="analysis-report-comparison-column" data-comparison-slot="left" data-analysis-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001">
+        <section data-comparison-section="standingSagittalPlane"><div class="comparison-section-title">立位矢状面</div><p>left sagittal</p></section>
+        <section data-comparison-section="standingFrontalPlane"><div class="comparison-section-title">立位前額面</div><p>left frontal</p></section>
+        <section data-comparison-section="postureType"><div class="comparison-section-title">姿勢タイプ</div><p>left posture</p></section>
+        <section data-comparison-section="centerOfGravity"><div class="comparison-section-title">重心位置</div><p>left com</p></section>
+      </div>
+      <div data-testid="analysis-report-comparison-column" data-comparison-slot="right" data-analysis-id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2">
+        <section data-comparison-section="standingSagittalPlane"><div class="comparison-section-title">立位矢状面</div><p>right sagittal</p></section>
+        <section data-comparison-section="standingFrontalPlane"><div class="comparison-section-title">立位前額面</div><p>right frontal</p></section>
+        <section data-comparison-section="postureType"><div class="comparison-section-title">姿勢タイプ</div><p>right posture</p></section>
+        <section data-comparison-section="centerOfGravity"><div class="comparison-section-title">重心位置</div><p>right com</p></section>
+      </div>
+      </div>
+      <div id="comparison-options-panel" class="analysis-report-comparison-options-popup" hidden role="listbox">
+      <div data-testid="analysis-report-comparison-option" data-analysis-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001" role="option">opt1</div>
+      <div data-testid="analysis-report-comparison-option" data-analysis-id="cccccccc-cccc-4ccc-8ccc-cccccccc0003" role="option">opt3</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const flags = window.__crvFlags || {};
+      const single = document.getElementById('single-view');
+      const comparison = document.getElementById('comparison-view');
+      const loading = document.getElementById('comparison-loading');
+      const panel = document.getElementById('comparison-options-panel');
+      const leftColumn = comparison.querySelector('[data-testid="analysis-report-comparison-column"][data-comparison-slot="left"]');
+      const selectorSurface = comparison.querySelector('.ant-select-selector');
+      const searchInput = comparison.querySelector('[data-testid="analysis-report-comparison-selector"]');
+
+      function setSelectorExpanded(open) {
+        const value = open ? 'true' : 'false';
+        searchInput.setAttribute('aria-expanded', value);
+        selectorSurface.setAttribute('aria-expanded', value);
+      }
+
+      document.querySelector('[data-testid="analysis-report-compare-open"]').addEventListener('click', () => {
+        single.hidden = true;
+        comparison.hidden = false;
+        if (flags.missingSection) {
+          const col = comparison.querySelector(
+            '[data-testid="analysis-report-comparison-column"][data-comparison-slot="left"]'
+          );
+          const sec = col?.querySelector('[data-comparison-section="standingSagittalPlane"]');
+          if (sec) sec.remove();
+        }
+      });
+
+      const compareExit = comparison.querySelector('[data-testid="analysis-report-compare-exit"]');
+      compareExit?.addEventListener('click', () => {
+        comparison.hidden = true;
+        single.hidden = false;
+        const report = document.querySelector('[data-testid="analysis-report"]');
+        if (report) {
+          const parts = location.pathname.split('/').filter(Boolean);
+          const reportsIdx = parts.indexOf('reports');
+          if (reportsIdx >= 0 && parts[reportsIdx + 1]) {
+            report.setAttribute('data-analysis-id', parts[reportsIdx + 1]);
+          }
+        }
+      });
+
+      selectorSurface.addEventListener('click', () => {
+        if (flags.singleOptionOnly) {
+          panel.innerHTML =
+            '<div data-testid="analysis-report-comparison-option" data-analysis-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001" role="option">only</div>';
+        }
+        panel.hidden = false;
+        setSelectorExpanded(true);
+      });
+
+      panel.addEventListener('click', (ev) => {
+        const opt = ev.target.closest('[data-testid="analysis-report-comparison-option"]');
+        if (!opt) return;
+        const id = opt.getAttribute('data-analysis-id');
+        if (!id) return;
+        panel.hidden = true;
+        setSelectorExpanded(false);
+        if (flags.delayedSwitchLoading) {
+          loading.hidden = false;
+          return;
+        }
+        if (flags.delayedSwitchColumnOnly) {
+          loading.hidden = true;
+          return;
+        }
+        leftColumn.setAttribute('data-analysis-id', id);
+      });
+    })();
+  </script>
+</body>
+</html>

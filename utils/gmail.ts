@@ -56,10 +56,54 @@ type GmailClientOverride = {
 };
 
 let gmailClientOverride: GmailClientOverride | null = null;
+let gmailPreflightOverride: (() => Promise<void>) | null = null;
+
+export class GmailAuthError extends Error {
+    readonly code = 'gmail_auth_failed' as const;
+
+    constructor(message: string, options?: { cause?: unknown }) {
+        super(message);
+        this.name = 'GmailAuthError';
+        if (options?.cause !== undefined) {
+            (this as Error & { cause?: unknown }).cause = options.cause;
+        }
+    }
+}
 
 /** Test-only: inject mocked Gmail list/get responses. */
 export function setGmailClientOverride(client: GmailClientOverride | null): void {
     gmailClientOverride = client;
+}
+
+/** Test-only: replace read-only Gmail API preflight (must be reset after tests). */
+export function setGmailPreflightOverride(handler: (() => Promise<void>) | null): void {
+    gmailPreflightOverride = handler;
+}
+
+export function isGmailAuthenticationFailure(error: unknown): boolean {
+    if (error instanceof GmailAuthError) {
+        return true;
+    }
+    return isInvalidGrantOAuthError(error);
+}
+
+function isInvalidGrantOAuthError(error: unknown): boolean {
+    const err = error as { message?: string; response?: { data?: { error?: string } } };
+    if (err?.response?.data?.error === 'invalid_grant') {
+        return true;
+    }
+    const message = error instanceof Error ? error.message : String(error ?? '');
+    return /invalid_grant/i.test(message);
+}
+
+function throwIfGmailAuthFailure(error: unknown): never {
+    if (isInvalidGrantOAuthError(error)) {
+        throw new GmailAuthError(
+            'Gmail OAuth token refresh failed (invalid_grant). Reauthorize the test mailbox token.json before send.',
+            { cause: error }
+        );
+    }
+    throw error;
 }
 
 async function getGmailClient() {
@@ -69,6 +113,36 @@ async function getGmailClient() {
     const oAuth2Client = new google.auth.OAuth2(client_id, client_secret);
     oAuth2Client.setCredentials(token);
     return google.gmail({ version: 'v1', auth: oAuth2Client });
+}
+
+/**
+ * Read-only Gmail API check before share-email send.
+ * Confirms OAuth refresh + messages.list works (env presence alone is not enough).
+ */
+export async function preflightGmailApiReadAccess(): Promise<void> {
+    if (gmailPreflightOverride) {
+        return gmailPreflightOverride();
+    }
+    if (gmailClientOverride) {
+        try {
+            await gmailClientOverride.listMessages('in:inbox', 1);
+        } catch (error) {
+            throwIfGmailAuthFailure(error);
+            throw error;
+        }
+        return;
+    }
+    try {
+        const gmail = await getGmailClient();
+        await gmail.users.messages.list({
+            userId: 'me',
+            maxResults: 1,
+            q: 'in:inbox',
+        });
+    } catch (error) {
+        throwIfGmailAuthFailure(error);
+        throw error;
+    }
 }
 
 function decodeGmailBase64Url(data: string): string {
@@ -302,7 +376,7 @@ export function selectMatchingGmailMessage(
     return null;
 }
 
-async function fetchMessageRecords(
+export async function fetchMessageRecords(
     to: string,
     subjectContains: string
 ): Promise<GmailMessageRecord[]> {
@@ -315,21 +389,39 @@ async function fetchMessageRecords(
         }
         return records;
     }
-    const gmail = await getGmailClient();
-    const res = await gmail.users.messages.list({
-        userId: 'me',
-        q: query,
-        maxResults: 20,
-    });
+    let gmail;
+    try {
+        gmail = await getGmailClient();
+    } catch (error) {
+        throwIfGmailAuthFailure(error);
+        throw error;
+    }
+    let res;
+    try {
+        res = await gmail.users.messages.list({
+            userId: 'me',
+            q: query,
+            maxResults: 20,
+        });
+    } catch (error) {
+        throwIfGmailAuthFailure(error);
+        throw error;
+    }
     if (!res.data.messages?.length) {
         return [];
     }
     const records: GmailMessageRecord[] = [];
     for (const brief of res.data.messages) {
-        const msg = await gmail.users.messages.get({
-            userId: 'me',
-            id: brief.id!,
-        });
+        let msg;
+        try {
+            msg = await gmail.users.messages.get({
+                userId: 'me',
+                id: brief.id!,
+            });
+        } catch (error) {
+            throwIfGmailAuthFailure(error);
+            throw error;
+        }
         records.push({
             id: brief.id!,
             internalDate: Number(msg.data.internalDate ?? 0),
@@ -645,6 +737,291 @@ export type ReferralCouponEmailMatch = {
     candidate: ParsedEmailCandidate;
 };
 
+export const ANALYSIS_REPORT_SHARE_EMAIL_SUBJECT_MARKER = '姿勢分析レポート';
+export const ANALYSIS_REPORT_SHARE_EMAIL_CTA_LABEL = '姿勢分析レポートはこちら';
+export const ANALYSIS_REPORT_SHARED_REPORT_STAGING_ORIGIN = 'https://app-stg.epose.com';
+export const ANALYSIS_REPORT_SHARED_REPORT_PATH = '/shared-report';
+
+const ANALYSIS_REPORT_SHARED_REPORT_URL_PATTERN =
+    /https:\/\/app-stg\.epose\.com\/shared-report\?[^\s"'<>]*token=[^\s"'<>&]+/i;
+
+const ANALYSIS_REPORT_SHARED_REPORT_HREF_PATTERN =
+    /href\s*=\s*["'](https:\/\/app-stg\.epose\.com\/shared-report\?[^"']+)["']/i;
+
+function decodeHtmlUrlEntities(href: string): string {
+    return href.replace(/&amp;/g, '&').trim();
+}
+
+export function redactSharedReportUrlForDiagnostics(url: string | null): string | null {
+    if (!url) {
+        return null;
+    }
+    try {
+        const parsed = new URL(url);
+        if (parsed.searchParams.has('token')) {
+            parsed.searchParams.set('token', '[redacted]');
+        }
+        return parsed.toString();
+    } catch {
+        return '[redacted-invalid-url]';
+    }
+}
+
+export function assertAllowedAnalysisReportSharedReportUrl(url: string): void {
+    let parsed: URL;
+    try {
+        parsed = new URL(decodeHtmlUrlEntities(url));
+    } catch {
+        throw new Error('Analysis report shared link is not a valid URL.');
+    }
+    if (parsed.origin !== ANALYSIS_REPORT_SHARED_REPORT_STAGING_ORIGIN) {
+        throw new Error(
+            `Analysis report shared link origin must be ${ANALYSIS_REPORT_SHARED_REPORT_STAGING_ORIGIN}, got ${parsed.origin}.`
+        );
+    }
+    if (parsed.pathname !== ANALYSIS_REPORT_SHARED_REPORT_PATH) {
+        throw new Error(
+            `Analysis report shared link path must be ${ANALYSIS_REPORT_SHARED_REPORT_PATH}, got ${parsed.pathname}.`
+        );
+    }
+    if (!parsed.searchParams.get('token')) {
+        throw new Error('Analysis report shared link is missing token query parameter.');
+    }
+}
+
+export function parseAnalysisReportSharedUrlReportId(url: string): string | null {
+    try {
+        return new URL(decodeHtmlUrlEntities(url)).searchParams.get('reportId');
+    } catch {
+        return null;
+    }
+}
+
+function stripHtmlComments(html: string): string {
+    return html.replace(/<!--[\s\S]*?-->/g, '');
+}
+
+export function inspectAnalysisReportShareEmailCta(html: string): {
+    ctaLabelFound: boolean;
+    hrefFromCta: string | null;
+} {
+    const searchable = stripHtmlComments(html);
+    const label = ANALYSIS_REPORT_SHARE_EMAIL_CTA_LABEL;
+    const anchorWithLabel = new RegExp(
+        `<a\\b[^>]*href\\s*=\\s*["']([^"']+)["'][^>]*>[\\s\\S]{0,400}?${escapeRegexForVerification(label)}`,
+        'i'
+    );
+    const anchorMatch = searchable.match(anchorWithLabel);
+    if (anchorMatch?.[1]) {
+        return {
+            ctaLabelFound: true,
+            hrefFromCta: decodeHtmlUrlEntities(anchorMatch[1]),
+        };
+    }
+
+    const idx = searchable.indexOf(label);
+    if (idx < 0) {
+        return { ctaLabelFound: false, hrefFromCta: null };
+    }
+    const window = searchable.slice(Math.max(0, idx - 1200), idx + label.length);
+    const anchorMatches = [...window.matchAll(/<a\b[^>]*href\s*=\s*["']([^"']+)["'][^>]*>/gi)];
+    if (!anchorMatches.length) {
+        return { ctaLabelFound: true, hrefFromCta: null };
+    }
+    const href = decodeHtmlUrlEntities(anchorMatches[anchorMatches.length - 1]![1]!);
+    return { ctaLabelFound: true, hrefFromCta: href };
+}
+
+export function extractAnalysisReportSharedLinkFromEmailBody(htmlOrText: string): string | null {
+    if (htmlOrText.includes('<')) {
+        const fromCta = inspectAnalysisReportShareEmailCta(htmlOrText);
+        if (fromCta.hrefFromCta?.includes('/shared-report')) {
+            try {
+                assertAllowedAnalysisReportSharedReportUrl(fromCta.hrefFromCta);
+                return decodeHtmlUrlEntities(fromCta.hrefFromCta);
+            } catch {
+                // fall through to other extractors
+            }
+        }
+        const hrefMatch = htmlOrText.match(ANALYSIS_REPORT_SHARED_REPORT_HREF_PATTERN);
+        if (hrefMatch?.[1]) {
+            const href = decodeHtmlUrlEntities(hrefMatch[1]);
+            try {
+                assertAllowedAnalysisReportSharedReportUrl(href);
+                return href;
+            } catch {
+                return null;
+            }
+        }
+    }
+
+    const normalized = htmlOrText.includes('<')
+        ? stripHtmlForVerificationText(htmlOrText)
+        : decodeHtmlEntitiesForVerification(htmlOrText).replace(/\s+/g, ' ');
+    const match = normalized.match(ANALYSIS_REPORT_SHARED_REPORT_URL_PATTERN);
+    if (match) {
+        const url = match[0]!;
+        try {
+            assertAllowedAnalysisReportSharedReportUrl(url);
+            return url;
+        } catch {
+            return null;
+        }
+    }
+    return null;
+}
+
+export type AnalysisReportShareEmailRecordDiagnosis = {
+    rejectionReasons: string[];
+    wouldMatch: boolean;
+    extractedLink: string | null;
+    ctaInspection: { ctaLabelFound: boolean; hrefFromCta: string | null };
+};
+
+export function diagnoseAnalysisReportShareEmailRecord(
+    record: GmailMessageRecord,
+    recipient: string,
+    analysisId: string,
+    notBeforeEpochMs: number
+): AnalysisReportShareEmailRecordDiagnosis {
+    const reasons: string[] = [];
+    const candidate = buildEmailCandidateFromRecord(record);
+    const ctaInspection = inspectAnalysisReportShareEmailCta(candidate.body);
+
+    if (!candidate.subject.includes(ANALYSIS_REPORT_SHARE_EMAIL_SUBJECT_MARKER)) {
+        reasons.push('subject_missing_marker');
+    }
+    if (!passesInternalDateFreshness(record.internalDate, notBeforeEpochMs)) {
+        reasons.push('freshness_before_send_window');
+    }
+    if (!headersMatchExactRecipient(record.headers, recipient)) {
+        reasons.push('recipient_header_mismatch');
+    }
+    if (!candidate.body && !candidate.rawPlainBody) {
+        reasons.push('mime_body_empty');
+    }
+
+    const extractedLink =
+        extractAnalysisReportSharedLinkFromEmailBody(candidate.body) ||
+        extractAnalysisReportSharedLinkFromEmailBody(candidate.textBody) ||
+        extractAnalysisReportSharedLinkFromEmailBody(candidate.rawPlainBody);
+
+    if (!ctaInspection.ctaLabelFound) {
+        reasons.push('cta_label_not_found_in_html');
+    } else if (!ctaInspection.hrefFromCta) {
+        reasons.push('cta_href_not_found_near_label');
+    } else if (!ctaInspection.hrefFromCta.includes('/shared-report')) {
+        reasons.push('cta_href_not_shared_report');
+    } else {
+        try {
+            if (!new URL(decodeHtmlUrlEntities(ctaInspection.hrefFromCta)).searchParams.get('token')) {
+                reasons.push('cta_href_missing_token');
+            }
+        } catch {
+            reasons.push('cta_href_invalid_url');
+        }
+    }
+
+    if (!extractedLink) {
+        reasons.push('url_pattern_no_match');
+    }
+
+    if (!isAnalysisReportShareEmailCandidate(candidate, analysisId)) {
+        if (!reasons.includes('subject_missing_marker') && !reasons.includes('url_pattern_no_match')) {
+            reasons.push('candidate_predicate_failed');
+        }
+    }
+
+    const effectiveWouldMatch =
+        passesInternalDateFreshness(record.internalDate, notBeforeEpochMs) &&
+        headersMatchExactRecipient(record.headers, recipient) &&
+        candidate.subject.includes(ANALYSIS_REPORT_SHARE_EMAIL_SUBJECT_MARKER) &&
+        isAnalysisReportShareEmailCandidate(candidate, analysisId) &&
+        Boolean(extractedLink);
+
+    return {
+        rejectionReasons: reasons,
+        wouldMatch: effectiveWouldMatch,
+        extractedLink,
+        ctaInspection,
+    };
+}
+
+export function isAnalysisReportShareEmailCandidate(
+    candidate: ParsedEmailCandidate,
+    analysisId: string
+): boolean {
+    if (!candidate.subject.includes(ANALYSIS_REPORT_SHARE_EMAIL_SUBJECT_MARKER)) {
+        return false;
+    }
+    const layers = [candidate.textBody, candidate.body, candidate.rawPlainBody].filter(Boolean);
+    for (const layer of layers) {
+        const link = extractAnalysisReportSharedLinkFromEmailBody(layer);
+        if (!link) {
+            continue;
+        }
+        const reportId = parseAnalysisReportSharedUrlReportId(link);
+        if (reportId && reportId !== analysisId) {
+            continue;
+        }
+        return true;
+    }
+    return false;
+}
+
+export type AnalysisReportShareEmailMatch = {
+    messageId: string;
+    sharedReportUrl: string;
+    candidate: ParsedEmailCandidate;
+};
+
+export async function waitForAnalysisReportShareEmailMatch(
+    recipient: string,
+    analysisId: string,
+    notBeforeEpochMs: number,
+    timeoutMs: number = 120000,
+    intervalMs: number = 10000
+): Promise<AnalysisReportShareEmailMatch> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        let records: GmailMessageRecord[];
+        try {
+            records = await fetchMessageRecords(
+                recipient,
+                ANALYSIS_REPORT_SHARE_EMAIL_SUBJECT_MARKER
+            );
+        } catch (error) {
+            throwIfGmailAuthFailure(error);
+            throw error;
+        }
+        for (const record of records) {
+            if (!passesInternalDateFreshness(record.internalDate, notBeforeEpochMs)) {
+                continue;
+            }
+            if (!headersMatchExactRecipient(record.headers, recipient)) {
+                continue;
+            }
+            const candidate = buildEmailCandidateFromRecord(record);
+            if (!isAnalysisReportShareEmailCandidate(candidate, analysisId)) {
+                continue;
+            }
+            const link =
+                extractAnalysisReportSharedLinkFromEmailBody(candidate.textBody) ||
+                extractAnalysisReportSharedLinkFromEmailBody(candidate.body);
+            if (!link) {
+                continue;
+            }
+            assertAllowedAnalysisReportSharedReportUrl(link);
+            return { messageId: record.id, sharedReportUrl: link, candidate };
+        }
+        await new Promise((res) => setTimeout(res, intervalMs));
+    }
+
+    throw new Error(
+        `Timeout waiting for analysis report share email to ${recipient} with subject containing "${ANALYSIS_REPORT_SHARE_EMAIL_SUBJECT_MARKER}" and a /shared-report link received after ${new Date(notBeforeEpochMs).toISOString()}`
+    );
+}
+
 export async function waitForReferralCouponEmailMatch(
     recipient: string,
     referralCode: string,
@@ -675,5 +1052,188 @@ export async function waitForReferralCouponEmailMatch(
 
     throw new Error(
         `Timeout waiting for referral coupon email to ${recipient} with subject containing "${REFERRAL_COUPON_EMAIL_SUBJECT_MARKER}" and code "${referralCode}" received after ${new Date(notBeforeEpochMs).toISOString()}`
+    );
+}
+
+/** Staging comparison share email CTA (same label as single-report share). */
+export const ANALYSIS_REPORT_SHARED_COMPARISON_REPORT_PATH = '/shared-report-comparison';
+
+const ANALYSIS_REPORT_SHARED_COMPARISON_REPORT_URL_PATTERN =
+    /https:\/\/app-stg\.epose\.com\/shared-report-comparison\?[^\s"'<>]*token=[^\s"'<>&]+/i;
+
+const ANALYSIS_REPORT_SHARED_COMPARISON_REPORT_HREF_PATTERN =
+    /href\s*=\s*["'](https:\/\/app-stg\.epose\.com\/shared-report-comparison\?[^"']+)["']/i;
+
+export function assertAllowedAnalysisReportSharedComparisonReportUrl(url: string): void {
+    let parsed: URL;
+    try {
+        parsed = new URL(decodeHtmlUrlEntities(url));
+    } catch {
+        throw new Error('Comparison shared link is not a valid URL.');
+    }
+    if (parsed.origin !== ANALYSIS_REPORT_SHARED_REPORT_STAGING_ORIGIN) {
+        throw new Error(
+            `Comparison shared link origin must be ${ANALYSIS_REPORT_SHARED_REPORT_STAGING_ORIGIN}, got ${parsed.origin}.`
+        );
+    }
+    if (parsed.pathname !== ANALYSIS_REPORT_SHARED_COMPARISON_REPORT_PATH) {
+        throw new Error(
+            `Comparison shared link path must be ${ANALYSIS_REPORT_SHARED_COMPARISON_REPORT_PATH}, got ${parsed.pathname}.`
+        );
+    }
+    if (!parsed.searchParams.get('token')) {
+        throw new Error('Comparison shared link is missing token query parameter.');
+    }
+}
+
+export function parseAnalysisReportSharedComparisonUrlPair(url: string): {
+    leftAnalysisId: string | null;
+    rightAnalysisId: string | null;
+} {
+    try {
+        const parsed = new URL(decodeHtmlUrlEntities(url));
+        const left =
+            parsed.searchParams.get('leftAnalysisId') ??
+            parsed.searchParams.get('reportId') ??
+            parsed.searchParams.get('leftReportId');
+        const right =
+            parsed.searchParams.get('rightAnalysisId') ?? parsed.searchParams.get('rightReportId');
+        return {
+            leftAnalysisId: left?.trim() || null,
+            rightAnalysisId: right?.trim() || null,
+        };
+    } catch {
+        return { leftAnalysisId: null, rightAnalysisId: null };
+    }
+}
+
+export function extractAnalysisReportSharedComparisonLinkFromEmailBody(htmlOrText: string): string | null {
+    if (htmlOrText.includes('<')) {
+        const fromCta = inspectAnalysisReportShareEmailCta(htmlOrText);
+        if (fromCta.hrefFromCta?.includes(ANALYSIS_REPORT_SHARED_COMPARISON_REPORT_PATH)) {
+            try {
+                assertAllowedAnalysisReportSharedComparisonReportUrl(fromCta.hrefFromCta);
+                return decodeHtmlUrlEntities(fromCta.hrefFromCta);
+            } catch {
+                // fall through
+            }
+        }
+        const hrefMatch = htmlOrText.match(ANALYSIS_REPORT_SHARED_COMPARISON_REPORT_HREF_PATTERN);
+        if (hrefMatch?.[1]) {
+            const href = decodeHtmlUrlEntities(hrefMatch[1]);
+            try {
+                assertAllowedAnalysisReportSharedComparisonReportUrl(href);
+                return href;
+            } catch {
+                return null;
+            }
+        }
+    }
+
+    const normalized = htmlOrText.includes('<')
+        ? stripHtmlForVerificationText(htmlOrText)
+        : decodeHtmlEntitiesForVerification(htmlOrText).replace(/\s+/g, ' ');
+    const match = normalized.match(ANALYSIS_REPORT_SHARED_COMPARISON_REPORT_URL_PATTERN);
+    if (match) {
+        const url = match[0]!;
+        try {
+            assertAllowedAnalysisReportSharedComparisonReportUrl(url);
+            return url;
+        } catch {
+            return null;
+        }
+    }
+    return null;
+}
+
+function comparisonPairMatchesLink(
+    link: string,
+    leftAnalysisId: string,
+    rightAnalysisId: string
+): boolean {
+    const { leftAnalysisId: linkLeft, rightAnalysisId: linkRight } =
+        parseAnalysisReportSharedComparisonUrlPair(link);
+    if (linkLeft && linkLeft !== leftAnalysisId) {
+        return false;
+    }
+    if (linkRight && linkRight !== rightAnalysisId) {
+        return false;
+    }
+    return true;
+}
+
+export function isAnalysisReportShareComparisonEmailCandidate(
+    candidate: ParsedEmailCandidate,
+    leftAnalysisId: string,
+    rightAnalysisId: string
+): boolean {
+    if (!candidate.subject.includes(ANALYSIS_REPORT_SHARE_EMAIL_SUBJECT_MARKER)) {
+        return false;
+    }
+    const layers = [candidate.textBody, candidate.body, candidate.rawPlainBody].filter(Boolean);
+    for (const layer of layers) {
+        const link = extractAnalysisReportSharedComparisonLinkFromEmailBody(layer);
+        if (!link) {
+            continue;
+        }
+        if (!comparisonPairMatchesLink(link, leftAnalysisId, rightAnalysisId)) {
+            continue;
+        }
+        return true;
+    }
+    return false;
+}
+
+export type ComparisonReportShareEmailMatch = {
+    messageId: string;
+    sharedComparisonUrl: string;
+    candidate: ParsedEmailCandidate;
+};
+
+export async function waitForComparisonReportShareEmailMatch(
+    recipient: string,
+    leftAnalysisId: string,
+    rightAnalysisId: string,
+    notBeforeEpochMs: number,
+    timeoutMs: number = 120000,
+    intervalMs: number = 10000
+): Promise<ComparisonReportShareEmailMatch> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        let records: GmailMessageRecord[];
+        try {
+            records = await fetchMessageRecords(recipient, ANALYSIS_REPORT_SHARE_EMAIL_SUBJECT_MARKER);
+        } catch (error) {
+            throwIfGmailAuthFailure(error);
+            throw error;
+        }
+        for (const record of records) {
+            if (!passesInternalDateFreshness(record.internalDate, notBeforeEpochMs)) {
+                continue;
+            }
+            if (!headersMatchExactRecipient(record.headers, recipient)) {
+                continue;
+            }
+            const candidate = buildEmailCandidateFromRecord(record);
+            if (
+                !isAnalysisReportShareComparisonEmailCandidate(candidate, leftAnalysisId, rightAnalysisId)
+            ) {
+                continue;
+            }
+            const link =
+                extractAnalysisReportSharedComparisonLinkFromEmailBody(candidate.textBody) ||
+                extractAnalysisReportSharedComparisonLinkFromEmailBody(candidate.body) ||
+                extractAnalysisReportSharedComparisonLinkFromEmailBody(candidate.rawPlainBody);
+            if (!link) {
+                continue;
+            }
+            assertAllowedAnalysisReportSharedComparisonReportUrl(link);
+            return { messageId: record.id, sharedComparisonUrl: link, candidate };
+        }
+        await new Promise((res) => setTimeout(res, intervalMs));
+    }
+
+    throw new Error(
+        `Timeout waiting for comparison share email to ${recipient} with subject containing "${ANALYSIS_REPORT_SHARE_EMAIL_SUBJECT_MARKER}" and a /shared-report-comparison link for pair ${leftAnalysisId}/${rightAnalysisId} received after ${new Date(notBeforeEpochMs).toISOString()}`
     );
 }

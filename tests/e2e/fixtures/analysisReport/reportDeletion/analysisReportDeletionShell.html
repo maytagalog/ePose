@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>Deletion fixture</title>
+  <style>[hidden]{display:none !important}</style>
+</head>
+<body>
+  <div id="history-panel">
+    <div data-testid="analysis-report-history-list" id="history-list">
+      <div id="history-items"></div>
+      <button type="button" data-testid="analysis-report-history-load-more" id="load-more" hidden>load-more</button>
+    </div>
+  </div>
+  <div id="report-panel" hidden>
+    <div data-testid="analysis-report" id="report-root" data-load-state="ready">
+      <div data-testid="analysis-report-header">
+        <div data-testid="analysis-report-header-field" data-field="name">Fixture Customer</div>
+        <div data-testid="analysis-report-header-field" data-field="height" data-value="170">170</div>
+        <div data-testid="analysis-report-header-field" data-field="age" data-value="30">30</div>
+        <div data-testid="analysis-report-header-field" data-field="sex" data-value="male">M</div>
+        <div data-testid="analysis-report-header-field" data-field="measuredAt" data-value="2020-01-01T00:00:00.000Z">2020/01/01</div>
+      </div>
+      <div data-testid="analysis-report-summary">AI判定</div>
+      <div data-testid="analysis-report-score">42</div>
+    </div>
+    <button type="button" data-testid="analysis-report-actions-toggle" id="actions-toggle">⋯</button>
+    <div data-testid="analysis-report-actions-menu" data-report-view="single" id="actions-menu" hidden>
+      <button type="button" data-testid="analysis-report-delete-open" id="delete-open">削除</button>
+    </div>
+  </div>
+  <div data-testid="analysis-report-delete-dialog" id="delete-dialog" hidden data-analysis-id="">
+    <div role="dialog" id="delete-dialog-panel">
+      <h2>レポートの削除</h2>
+      <p>このレポートは完全に消去され、復旧できません。</p>
+      <p>よろしいですか？</p>
+      <button type="button" data-testid="analysis-report-delete-cancel" id="delete-cancel">キャンセル</button>
+      <button type="button" data-testid="analysis-report-delete-confirm" id="delete-confirm">削 除</button>
+    </div>
+  </div>
+  <div data-testid="analysis-report-delete-success" id="delete-success" hidden>deleted</div>
+  <div id="delete-toast" hidden>姿勢分析レポートが削除されました</div>
+  <div id="customer-landing" hidden>
+    <main role="main">
+      <div data-testid="customer-list">
+        <div data-testid="customer-list-loading" hidden></div>
+        <div data-testid="customer-row" data-customer-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa">
+          <span data-testid="customer-name">Fixture Customer</span>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script>
+    const CUSTOMER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const PROTECTED_ID = 'a871ea8f-c5e8-4fbd-b933-75fe8e2a144f';
+    const ROWS = [
+      { id: '11111111-1111-4111-8111-111111111111', measuredAt: '2020-01-01T08:00:00.000Z', label: '2020/01/01 oldest' },
+      { id: '22222222-2222-4222-8222-222222222222', measuredAt: '2021-06-15T08:00:00.000Z', label: '2021/06/15' },
+      { id: '33333333-3333-4333-8333-333333333333', measuredAt: '2022-12-01T08:00:00.000Z', label: '2022/12/01' },
+    ];
+    const TIE_ID = '44444444-4444-4444-8444-444444444444';
+    const historyItems = document.getElementById('history-items');
+    const loadMore = document.getElementById('load-more');
+    const reportPanel = document.getElementById('report-panel');
+    const historyPanel = document.getElementById('history-panel');
+    const reportRoot = document.getElementById('report-root');
+    const actionsMenu = document.getElementById('actions-menu');
+    const deleteDialog = document.getElementById('delete-dialog');
+    const deleteSuccess = document.getElementById('delete-success');
+    function loadDeletedIds() {
+      try {
+        const raw = sessionStorage.getItem('ardDeletedIds');
+        return raw ? JSON.parse(raw) : [];
+      } catch (e) {
+        return [];
+      }
+    }
+    function saveDeletedIds(ids) {
+      sessionStorage.setItem('ardDeletedIds', JSON.stringify(ids));
+    }
+    window.__ardDeletedIds = window.__ardDeletedIds || loadDeletedIds();
+
+    function visibleRows() {
+      return ROWS.filter((r) => !window.__ardDeletedIds.includes(r.id));
+    }
+
+    function renderHistory(onlyFirstPage) {
+      historyItems.innerHTML = '';
+      if (window.__ardHistoryEmpty) {
+        const empty = document.createElement('div');
+        empty.setAttribute('data-testid', 'cirs-analysis-empty');
+        historyItems.appendChild(empty);
+        return;
+      }
+      let rows = visibleRows();
+      if (window.__ardProtectedOldest) {
+        rows = [{ id: PROTECTED_ID, measuredAt: '2019-01-01T08:00:00.000Z', label: 'protected' }, ...rows];
+      }
+      if (window.__ardTiedOldest) {
+        rows = [{ id: TIE_ID, measuredAt: '2020-01-01T08:00:00.000Z', label: 'tie' }, ...rows];
+      }
+      // display unsorted intentionally
+      const shuffled = [...rows].reverse();
+      const pageRows = onlyFirstPage && window.__ardIncompletePagination ? shuffled.slice(0, 1) : shuffled;
+      pageRows.forEach((row) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.setAttribute('data-testid', 'cirs-analysis-item');
+        btn.setAttribute('data-customer-id', CUSTOMER_ID);
+        btn.setAttribute('data-analysis-id', row.id);
+        if (!window.__ardOmitMeasuredAt) {
+          btn.setAttribute('data-measured-at', row.measuredAt);
+        }
+        btn.textContent = row.label;
+        btn.addEventListener('click', () => openReport(row.id, row.measuredAt));
+        historyItems.appendChild(btn);
+      });
+      loadMore.hidden = !(onlyFirstPage && window.__ardIncompletePagination);
+    }
+
+    function openReport(analysisId, measuredAt) {
+      historyPanel.hidden = true;
+      reportPanel.hidden = false;
+      reportRoot.setAttribute('data-customer-id', CUSTOMER_ID);
+      reportRoot.setAttribute('data-analysis-id', analysisId);
+      const measuredField = document.querySelector('[data-field="measuredAt"]');
+      measuredField.setAttribute('data-value', measuredAt);
+      measuredField.textContent = measuredAt.slice(0, 10).replace(/-/g, '/');
+      history.pushState({}, '', `/customers/${CUSTOMER_ID}/reports/${analysisId}`);
+    }
+
+    function openHistory() {
+      historyPanel.hidden = false;
+      reportPanel.hidden = true;
+      actionsMenu.hidden = true;
+      deleteDialog.hidden = true;
+      renderHistory(true);
+      history.pushState({}, '', `/customers/${CUSTOMER_ID}/posture-analysis-report`);
+    }
+
+    document.getElementById('actions-toggle').addEventListener('click', () => {
+      actionsMenu.hidden = !actionsMenu.hidden;
+    });
+    document.getElementById('delete-open').addEventListener('click', () => {
+      const analysisId = reportRoot.getAttribute('data-analysis-id');
+      deleteDialog.setAttribute('data-analysis-id', analysisId);
+      deleteDialog.hidden = false;
+    });
+    document.getElementById('delete-cancel').addEventListener('click', () => {
+      deleteDialog.hidden = true;
+    });
+    function showCustomerLandingAfterDelete() {
+      reportPanel.hidden = true;
+      historyPanel.hidden = true;
+      deleteSuccess.hidden = true;
+      const landing = document.getElementById('customer-landing');
+      const toast = document.getElementById('delete-toast');
+      landing.hidden = false;
+      toast.hidden = false;
+      const dest = window.__ardWrongDeleteLandingCustomerId
+        ? `/customers/${window.__ardWrongDeleteLandingCustomerId}`
+        : '/customers';
+      history.pushState({}, '', dest);
+    }
+
+    document.getElementById('delete-confirm').addEventListener('click', async () => {
+      const analysisId = reportRoot.getAttribute('data-analysis-id');
+      deleteDialog.hidden = true;
+      try {
+        await fetch('https://api-stg.epose.com/report/delete_report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accountId: 'fixture-account-id', id: analysisId }),
+        });
+      } catch (e) {
+        openHistory();
+        return;
+      }
+      if (!window.__ardSurviveAfterDelete) {
+        if (!window.__ardDeletedIds.includes(analysisId)) {
+          window.__ardDeletedIds.push(analysisId);
+          saveDeletedIds(window.__ardDeletedIds);
+        }
+      }
+      if (window.__ardDeleteLandsOnCustomerPage) {
+        showCustomerLandingAfterDelete();
+        return;
+      }
+      deleteSuccess.hidden = false;
+      deleteSuccess.removeAttribute('hidden');
+      openHistory();
+    });
+    loadMore.addEventListener('click', () => renderHistory(false));
+
+    openHistory();
+  </script>
+</body>
+</html>

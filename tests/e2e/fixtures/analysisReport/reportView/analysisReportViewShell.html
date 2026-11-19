@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="ja" id="html-root">
+<head>
+  <meta charset="utf-8" />
+  <title>Analysis Report viewing fixture</title>
+  <style>
+    [hidden]{display:none!important}
+    [data-testid="analysis-report-side-standing"],
+    [data-testid="analysis-report-front-standing"],
+    [data-testid="analysis-report-metric"],
+    [data-testid="analysis-report-metric-chart"],
+    #report-root section,
+    #report-root [data-testid="analysis-report-balance-chart"],
+    #report-root [data-testid="analysis-report-balance-value"],
+    #report-root [data-testid="analysis-report-leg-image"] { display: block; min-height: 8px; min-width: 8px; }
+    #global-list-page { display: flex; flex-direction: column; gap: 8px; padding: 8px; }
+    #global-coexistent-history-list { display: block; min-height: 12px; padding: 4px; border: 1px dashed #ccc; }
+    /* Display item settings: Ant-like modal wrap is fixed to viewport so modal stays visible when ant-modal-root has no box (trace 20261106-145005). */
+    #display-settings-dialog .ant-modal-wrap {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+    }
+    #display-settings-dialog .ant-modal {
+      position: relative;
+      width: min(360px, 90vw);
+      margin: 80px auto;
+      background: #fff;
+      min-height: 48px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+  </style>
+</head>
+<body>
+  <header><img role="img" alt="Menu" id="menu-button" /></header>
+  <div id="nav-dialog" role="dialog" aria-modal="true" hidden>
+    <a href="#" id="nav-analysis-list">分析レポート一覧</a>
+  </div>
+
+  <div id="global-list-page" hidden>
+    <!-- §14: shared analysis-report-history-list hook may coexist on the all-reports page. -->
+    <div data-testid="analysis-report-history-list" id="global-coexistent-history-list">
+      <span>Global page coexistent history hook</span>
+    </div>
+    <div data-testid="cirs-analysis-list" id="global-list">
+      <div class="ant-spin-nested-loading" data-testid="cirs-analysis-loading" id="global-loading-wrapper">
+        <div
+          id="global-active-spinner"
+          class="ant-spin ant-spin-spinning"
+          data-testid="cirs-analysis-loading"
+          aria-busy="true"
+          style="min-height: 12px; min-width: 12px"
+        ></div>
+        <div class="ant-spin-container"></div>
+      </div>
+      <div id="global-list-items"></div>
+      <p data-testid="cirs-analysis-empty" hidden>empty</p>
+    </div>
+  </div>
+
+  <div id="history-page" hidden>
+    <button type="button" data-testid="cirs-analysis-back">back</button>
+    <div data-testid="analysis-report-history-list" id="history-list">
+      <div data-testid="analysis-report-history-loading" hidden></div>
+      <div id="history-items"></div>
+    </div>
+  </div>
+
+  <div id="customer-page" hidden>
+    <div data-testid="customer-list">
+      <div data-testid="customer-row" data-customer-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa">
+        <span data-testid="customer-name">Fixture Customer</span>
+      </div>
+    </div>
+    <main>
+      <h3>Fixture Customer</h3>
+      <p data-testid="customer-furigana">フィクスチャー</p>
+      <button type="button">顧客情報を表示</button>
+    </main>
+  </div>
+
+  <header id="report-header" data-testid="analysis-report-header" hidden>
+    <div data-testid="analysis-report-header-field" data-field="name">Fixture Customer</div>
+    <div data-testid="analysis-report-header-field" data-field="height" data-value="170">170cm</div>
+    <div data-testid="analysis-report-header-field" data-field="age" data-value="30">30</div>
+    <div data-testid="analysis-report-header-field" data-field="sex" data-value="male">男性</div>
+    <div
+      data-testid="analysis-report-header-field"
+      data-field="measuredAt"
+      data-value="2026-03-13T08:22:38.000Z"
+    >2026.03.13 08:22</div>
+  </header>
+
+  <article
+    id="report-root"
+    data-testid="analysis-report"
+    data-load-state="loading"
+    data-customer-id=""
+    data-analysis-id=""
+    hidden
+  >
+    <div data-testid="analysis-report-summary">Fixture summary text</div>
+    <div data-testid="analysis-report-score">72</div>
+    <button type="button" data-testid="analysis-report-generation-rating-help">gen-help</button>
+    <button type="button" data-testid="analysis-report-results-help">results-help</button>
+    <section data-testid="analysis-report-side-standing" id="side-section"></section>
+    <section data-testid="analysis-report-front-standing" id="front-section"></section>
+    <section data-testid="analysis-report-posture-type">
+      <div data-testid="analysis-report-posture-type-value" data-pose-type="hunchback">猫背</div>
+    </section>
+    <section data-testid="analysis-report-leg-alignment">
+      <div data-testid="analysis-report-leg-image"></div>
+    </section>
+    <div data-testid="analysis-report-balance-chart"></div>
+    <div data-testid="analysis-report-balance-value" data-balance="left" data-balance-depth="ahead">balance</div>
+    <section data-testid="analysis-report-muscle-condition" data-load-state="ready" id="muscle-section"></section>
+    <section
+      data-testid="analysis-report-exercises-stretches"
+      id="exercises-section"
+      data-load-state="loading"
+      hidden
+    ></section>
+    <button
+      type="button"
+      id="report-actions-toggle"
+      data-testid="analysis-report-actions-toggle"
+      aria-expanded="false"
+      aria-controls="report-actions-menu"
+    >actions</button>
+    <div id="report-actions-menu" data-testid="analysis-report-actions-menu" data-report-view="single" hidden>
+      <div data-testid="analysis-report-display-settings-open" role="presentation">表示項目の設定</div>
+    </div>
+    <!-- Ant Design–like: test-id on ant-modal-root; visible modal is nested role="dialog" (trace 20261106-145005). -->
+    <div id="display-settings-dialog" data-testid="analysis-report-display-settings-dialog" class="arv-display-item-settings-modal-root" hidden>
+      <div class="ant-modal-mask"></div>
+      <div class="ant-modal-wrap">
+        <div class="ant-modal" role="dialog" aria-modal="true">
+          <div class="ant-modal-content">
+            <div class="ant-modal-body">
+              <button
+                type="button"
+                id="exercises-display-toggle"
+                data-testid="analysis-report-exercises-stretches-toggle"
+                role="switch"
+                aria-checked="false"
+              ></button>
+            </div>
+            <div class="ant-modal-footer">
+              <button type="button" data-testid="analysis-report-display-settings-save">保存</button>
+              <button type="button" data-testid="analysis-report-display-settings-cancel">キャンセル</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div
+      role="button"
+      tabindex="0"
+      id="bottom-history-control"
+      style="cursor:pointer"
+    ></div>
+  </article>
+
+  <div id="ant-modal-stack" aria-live="polite"></div>
+
+  <script>
+    window.__arvMode = window.__arvMode ?? 'success';
+    window.__arvWrongCustomer = window.__arvWrongCustomer ?? false;
+    window.__arvWrongAnalysis = window.__arvWrongAnalysis ?? false;
+    window.__arvPhotoMode = window.__arvPhotoMode ?? 'ready';
+    window.__arvMuscleEmpty = window.__arvMuscleEmpty ?? false;
+    window.__arvNoRecommendations = window.__arvNoRecommendations ?? false;
+    window.__arvPoseType = window.__arvPoseType ?? 'hunchback';
+    window.__arvUiLang = window.__arvUiLang ?? 'ja';
+    window.__arvExercisesDisplayToggle = window.__arvExercisesDisplayToggle ?? 'true';
+    window.__arvDisplaySettingsSaveNoop = window.__arvDisplaySettingsSaveNoop ?? false;
+    window.__arvDisplaySettingsSaveFails = window.__arvDisplaySettingsSaveFails ?? false;
+    window.__arvDisplaySettingsPersistMismatch = window.__arvDisplaySettingsPersistMismatch ?? false;
+    window.__arvExercisesVisibilityMismatchOnSave = window.__arvExercisesVisibilityMismatchOnSave ?? false;
+    window.__arvInvalidExercisesToggleAria = window.__arvInvalidExercisesToggleAria ?? false;
+    window.__arvDisplaySettingsRootNoBoundingBox = window.__arvDisplaySettingsRootNoBoundingBox ?? false;
+    window.__arvOmitDisplaySettingsUi = window.__arvOmitDisplaySettingsUi ?? false;
+    window.__arvBottomHistoryWrongCustomer = window.__arvBottomHistoryWrongCustomer ?? false;
+    window.__arvFlowOrder = window.__arvFlowOrder ?? [];
+    const CUSTOMER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const ANALYSIS_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const SIDE_KEYS = ['WholeBodyBFTilt','UpperBodyBFTilt','LowerBodyBFTilt','HeadBFTilt','HeadGap','DegreeOfHunchBack','PelvicTilt','WaistOffset','KneeBendDegree'];
+    const FRONT_KEYS = ['WholeBodyLRTilt','UpperBodyLRTilt','LowerBodyLRTilt','HeadLRTilt','NeckLRPositionalGap','ShoulderLRTilt','ChestLRPositionalGap','WaistLRTilt','WaistLRPositionalGap'];
+
+    const menuButton = document.getElementById('menu-button');
+    const navDialog = document.getElementById('nav-dialog');
+    const globalListPage = document.getElementById('global-list-page');
+    const historyPage = document.getElementById('history-page');
+    const customerPage = document.getElementById('customer-page');
+    const reportRoot = document.getElementById('report-root');
+    const reportHeader = document.getElementById('report-header');
+    const antModalStack = document.getElementById('ant-modal-stack');
+    const HELP_IMG_SRC = '/assets/help_black-8439848a.svg';
+
+    function setReportPanelVisible(visible) {
+      reportRoot.hidden = !visible;
+      reportHeader.hidden = !visible;
+    }
+
+    function prependSectionHelpIcon(container) {
+      const wrap = document.createElement('div');
+      const img = document.createElement('img');
+      img.src = HELP_IMG_SRC;
+      img.alt = '';
+      img.width = 16;
+      img.height = 16;
+      wrap.appendChild(img);
+      container.insertBefore(wrap, container.firstChild);
+    }
+
+    function pushFlow(step) {
+      if (!Array.isArray(window.__arvFlowOrder)) window.__arvFlowOrder = [];
+      window.__arvFlowOrder.push(step);
+    }
+
+    let muscleControlsMarked = false;
+    function pushMuscleControlsOnce() {
+      if (muscleControlsMarked) return;
+      muscleControlsMarked = true;
+      pushFlow('muscle_controls');
+    }
+
+    /** Staging-style ant-modal; on Close set root hidden=true so prior modals stay mounted (regression). */
+    function openAntModal(titleText) {
+      if (titleText === '筋肉の状態について') pushFlow('muscle_help');
+      else if (titleText === 'エクササイズとストレッチ') pushFlow('exercises_help');
+      const root = document.createElement('div');
+      root.className = 'ant-modal-root';
+      const mask = document.createElement('div');
+      mask.className = 'ant-modal-mask';
+      const wrap = document.createElement('div');
+      wrap.className = 'ant-modal-wrap';
+      const dialog = document.createElement('div');
+      dialog.setAttribute('role', 'dialog');
+      dialog.setAttribute('aria-modal', 'true');
+      dialog.className = 'ant-modal';
+      const content = document.createElement('div');
+      content.className = 'ant-modal-content';
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.setAttribute('aria-label', 'Close');
+      closeBtn.className = 'ant-modal-close';
+      const body = document.createElement('div');
+      body.className = 'ant-modal-body';
+      const titleEl = document.createElement('div');
+      titleEl.textContent = titleText;
+      body.appendChild(titleEl);
+      content.append(closeBtn, body);
+      dialog.appendChild(content);
+      wrap.appendChild(dialog);
+      root.append(mask, wrap);
+      antModalStack.appendChild(root);
+      closeBtn.addEventListener('click', () => {
+        root.hidden = true;
+      });
+    }
+
+    const SECTION_HELP_TITLE = {
+      'analysis-report-posture-type': 'AI姿勢タイプ判定について',
+      'analysis-report-leg-alignment': 'X脚・O脚と重心について',
+      'analysis-report-muscle-condition': '筋肉の状態について',
+      'analysis-report-exercises-stretches': 'エクササイズとストレッチ',
+    };
+
+    reportRoot.addEventListener('click', (e) => {
+      const t = e.target;
+      if (!t || t.tagName !== 'IMG' || typeof t.src !== 'string' || t.src.indexOf('/help_black-') === -1) {
+        return;
+      }
+      const section = t.closest('[data-testid]');
+      if (!section) return;
+      const testId = section.getAttribute('data-testid');
+      const title = SECTION_HELP_TITLE[testId];
+      if (title) openAntModal(title);
+    });
+
+    menuButton.addEventListener('click', () => { navDialog.hidden = false; });
+    document.getElementById('nav-analysis-list').addEventListener('click', (e) => {
+      e.preventDefault();
+      navDialog.hidden = true;
+      showGlobalList();
+    });
+
+    function metricRow(key, unit) {
+      const row = document.createElement('div');
+      row.setAttribute('data-testid', 'analysis-report-metric');
+      row.setAttribute('data-metric-key', key);
+      row.setAttribute('data-value', '1.2');
+      if (unit) row.setAttribute('data-unit', unit);
+      const chart = document.createElement('div');
+      chart.setAttribute('data-testid', 'analysis-report-metric-chart');
+      row.appendChild(chart);
+      return row;
+    }
+
+    function photoEl(view, state) {
+      const photo = document.createElement('img');
+      photo.setAttribute('data-testid', 'analysis-report-photo');
+      photo.setAttribute('data-view', view);
+      photo.setAttribute('data-image-state', state);
+      if (state === 'ready' || state === 'loading') {
+        photo.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+        photo.alt = view;
+      }
+      return photo;
+    }
+
+    function buildReportSections() {
+      const side = document.getElementById('side-section');
+      const front = document.getElementById('front-section');
+      side.innerHTML = '';
+      front.innerHTML = '';
+      const photoState = window.__arvPhotoMode === 'error' ? 'error' : window.__arvPhotoMode;
+      side.appendChild(photoEl('side', photoState));
+      front.appendChild(photoEl('front', photoState === 'error' ? 'ready' : photoState));
+      SIDE_KEYS.forEach((k) => side.appendChild(metricRow(k, k === 'DegreeOfHunchBack' ? '' : (k.includes('Gap') || k === 'WaistOffset' ? 'cm' : '°'))));
+      FRONT_KEYS.forEach((k) => front.appendChild(metricRow(k, k.includes('Gap') ? 'cm' : '°')));
+      const postureSec = document.querySelector('[data-testid="analysis-report-posture-type"]');
+      const legSec = document.querySelector('[data-testid="analysis-report-leg-alignment"]');
+      if (postureSec && !postureSec.querySelector('img[src*="/help_black-"]')) prependSectionHelpIcon(postureSec);
+      if (legSec && !legSec.querySelector('img[src*="/help_black-"]')) prependSectionHelpIcon(legSec);
+    }
+
+    function buildMuscleSection() {
+      const muscle = document.getElementById('muscle-section');
+      muscle.innerHTML = '';
+      prependSectionHelpIcon(muscle);
+      if (window.__arvMuscleEmpty) {
+        const showAll = document.createElement('button');
+        showAll.type = 'button';
+        showAll.setAttribute('data-testid', 'analysis-report-muscles-show-all');
+        showAll.disabled = true;
+        const hideAll = document.createElement('button');
+        hideAll.type = 'button';
+        hideAll.setAttribute('data-testid', 'analysis-report-muscles-hide-all');
+        hideAll.disabled = true;
+        muscle.append(showAll, hideAll);
+        ['shortening','stretching'].forEach((group) => {
+          const g = document.createElement('div');
+          g.setAttribute('data-testid', 'analysis-report-muscle-group');
+          g.setAttribute('data-muscle-group', group);
+          const empty = document.createElement('div');
+          empty.setAttribute('data-testid', 'analysis-report-muscle-group-empty');
+          empty.textContent = '該当する筋肉はありません';
+          g.appendChild(empty);
+          muscle.appendChild(g);
+        });
+        return;
+      }
+      const showAll = document.createElement('button');
+      showAll.type = 'button';
+      showAll.setAttribute('data-testid', 'analysis-report-muscles-show-all');
+      showAll.addEventListener('click', () => pushMuscleControlsOnce());
+      const hideAll = document.createElement('button');
+      hideAll.type = 'button';
+      hideAll.setAttribute('data-testid', 'analysis-report-muscles-hide-all');
+      hideAll.addEventListener('click', () => pushMuscleControlsOnce());
+      muscle.append(showAll, hideAll);
+      ['shortening','stretching'].forEach((group) => {
+        const g = document.createElement('div');
+        g.setAttribute('data-testid', 'analysis-report-muscle-group');
+        g.setAttribute('data-muscle-group', group);
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.setAttribute('data-testid', 'analysis-report-muscle-item');
+        item.setAttribute('data-muscle-id', group === 'shortening' ? 'GluteusMaximus' : 'Hamstrings');
+        item.setAttribute('aria-checked', 'false');
+        item.addEventListener('click', () => {
+          item.setAttribute('aria-checked', item.getAttribute('aria-checked') === 'true' ? 'false' : 'true');
+        });
+        g.appendChild(item);
+        const gs = document.createElement('button');
+        gs.type = 'button';
+        gs.setAttribute('data-testid', 'analysis-report-muscle-group-show');
+        gs.addEventListener('click', () => pushMuscleControlsOnce());
+        const gh = document.createElement('button');
+        gh.type = 'button';
+        gh.setAttribute('data-testid', 'analysis-report-muscle-group-hide');
+        gh.addEventListener('click', () => pushMuscleControlsOnce());
+        g.append(gs, gh);
+        muscle.appendChild(g);
+      });
+    }
+
+    function applyReportPresentationFlags() {
+      const poseEl = document.querySelector('[data-testid="analysis-report-posture-type-value"]');
+      if (poseEl instanceof HTMLElement) {
+        poseEl.setAttribute('data-pose-type', window.__arvPoseType || 'hunchback');
+      }
+      const htmlRoot = document.getElementById('html-root');
+      if (htmlRoot) {
+        htmlRoot.setAttribute('lang', window.__arvUiLang === undefined || window.__arvUiLang === null ? 'ja' : window.__arvUiLang);
+      }
+    }
+
+    function buildRecommendations() {
+      const section = document.getElementById('exercises-section');
+      section.innerHTML = '';
+      section.removeAttribute('data-load-state');
+      if (window.__arvNoRecommendations) {
+        section.hidden = true;
+        return;
+      }
+      if (window.__arvExercisesDisplayToggle === 'false') {
+        section.hidden = true;
+        return;
+      }
+      if (window.__arvExercisesVisibilityMismatchOnSave) {
+        section.hidden = true;
+        return;
+      }
+      section.hidden = false;
+      section.setAttribute('data-load-state', 'ready');
+      prependSectionHelpIcon(section);
+      const exercises = document.createElement('div');
+      exercises.setAttribute('data-testid', 'analysis-report-exercises');
+      const exRec = document.createElement('div');
+      exRec.setAttribute('data-testid', 'analysis-report-recommendation');
+      exRec.setAttribute('data-recommendation-id', 'Plank');
+      exRec.setAttribute('data-recommendation-type', 'exercise');
+      exercises.appendChild(exRec);
+      const exExpand = document.createElement('button');
+      exExpand.type = 'button';
+      exExpand.setAttribute('data-testid', 'analysis-report-exercises-expand');
+      exExpand.setAttribute('aria-expanded', 'false');
+      exExpand.addEventListener('click', () => {
+        exExpand.setAttribute('aria-expanded', exExpand.getAttribute('aria-expanded') === 'true' ? 'false' : 'true');
+      });
+      const stretches = document.createElement('div');
+      stretches.setAttribute('data-testid', 'analysis-report-stretches');
+      const stRec = document.createElement('div');
+      stRec.setAttribute('data-testid', 'analysis-report-recommendation');
+      stRec.setAttribute('data-recommendation-id', 'StretchA');
+      stRec.setAttribute('data-recommendation-type', 'stretch');
+      stretches.appendChild(stRec);
+      const stExpand = document.createElement('button');
+      stExpand.type = 'button';
+      stExpand.setAttribute('data-testid', 'analysis-report-stretches-expand');
+      stExpand.setAttribute('aria-expanded', 'false');
+      stExpand.addEventListener('click', () => {
+        stExpand.setAttribute('aria-expanded', stExpand.getAttribute('aria-expanded') === 'true' ? 'false' : 'true');
+      });
+      section.append(exercises, exExpand, stretches, stExpand);
+    }
+
+    function renderGlobalItems() {
+      const host = document.getElementById('global-list-items');
+      host.innerHTML = '';
+      const el = document.createElement('button');
+      el.type = 'button';
+      el.setAttribute('data-testid', 'cirs-analysis-item');
+      el.setAttribute('data-customer-id', window.__arvWrongCustomer ? 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' : CUSTOMER_ID);
+      el.setAttribute('data-analysis-id', window.__arvWrongAnalysis ? 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' : ANALYSIS_ID);
+      el.textContent = 'row';
+      el.addEventListener('click', () => openReport());
+      host.appendChild(el);
+    }
+
+    function setGlobalListSpinning(active) {
+      const spinner = document.getElementById('global-active-spinner');
+      if (active) {
+        spinner.classList.add('ant-spin-spinning');
+        spinner.hidden = false;
+        spinner.setAttribute('aria-busy', 'true');
+      } else {
+        spinner.classList.remove('ant-spin-spinning');
+        spinner.removeAttribute('aria-busy');
+      }
+    }
+
+    function showGlobalList() {
+      setReportPanelVisible(false);
+      historyPage.hidden = true;
+      customerPage.hidden = true;
+      globalListPage.hidden = false;
+      document.querySelector('[data-testid="cirs-analysis-empty"]').hidden = true;
+      document.getElementById('global-list-items').innerHTML = '';
+      setGlobalListSpinning(true);
+      const delayMs = typeof window.__arvGlobalListLoadDelayMs === 'number'
+        ? window.__arvGlobalListLoadDelayMs
+        : 50;
+      window.setTimeout(() => {
+        setGlobalListSpinning(false);
+        if (window.__arvMode === 'empty_list') {
+          document.querySelector('[data-testid="cirs-analysis-empty"]').hidden = false;
+          return;
+        }
+        renderGlobalItems();
+      }, delayMs);
+      history.pushState({}, '', '/analysis-report-list');
+    }
+
+    function openReport() {
+      window.__arvFlowOrder = [];
+      muscleControlsMarked = false;
+      globalListPage.hidden = true;
+      setReportPanelVisible(true);
+      const customer = window.__arvWrongCustomer ? 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' : CUSTOMER_ID;
+      const analysis = window.__arvWrongAnalysis ? 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' : ANALYSIS_ID;
+      reportRoot.setAttribute('data-customer-id', customer);
+      reportRoot.setAttribute('data-analysis-id', analysis);
+      if (window.__arvMode === 'load_error') {
+        reportRoot.setAttribute('data-load-state', 'error');
+      } else {
+        reportRoot.setAttribute('data-load-state', 'ready');
+      }
+      applyReportPresentationFlags();
+      buildReportSections();
+      buildMuscleSection();
+      buildRecommendations();
+      syncBottomHistoryControlLabel();
+      history.pushState({}, '', `/customers/${customer}/reports/${analysis}`);
+    }
+
+    function syncBottomHistoryControlLabel() {
+      const nameField = document.querySelector('[data-field="name"]');
+      const bottom = document.getElementById('bottom-history-control');
+      const name = (nameField && nameField.textContent) ? nameField.textContent.trim() : '';
+      bottom.textContent = name + ' 姿勢分析レポート一覧';
+    }
+
+    function openHistoryFromBottom() {
+      setReportPanelVisible(false);
+      historyPage.hidden = false;
+      const host = document.getElementById('history-items');
+      host.innerHTML = '';
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.setAttribute('data-testid', 'cirs-analysis-item');
+      row.setAttribute('data-customer-id', CUSTOMER_ID);
+      row.setAttribute('data-analysis-id', ANALYSIS_ID);
+      host.appendChild(row);
+      const targetCustomer = window.__arvBottomHistoryWrongCustomer
+        ? 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+        : CUSTOMER_ID;
+      history.pushState({}, '', `/customers/${targetCustomer}/posture-analysis-report`);
+    }
+
+    document.querySelector('[data-testid="analysis-report-generation-rating-help"]').addEventListener('click', () => {
+      openAntModal('世代別評価とは');
+    });
+    document.querySelector('[data-testid="analysis-report-results-help"]').addEventListener('click', () => {
+      openAntModal('分析結果について');
+    });
+
+    function wireReportActionsMenu() {
+      const actionsToggle = document.getElementById('report-actions-toggle');
+      const actionsMenu = document.getElementById('report-actions-menu');
+      const settingsRoot = document.getElementById('display-settings-dialog');
+      const exercisesToggle = document.getElementById('exercises-display-toggle');
+      if (window.__arvOmitDisplaySettingsUi) {
+        actionsToggle.hidden = true;
+        return;
+      }
+      exercisesToggle.addEventListener('click', () => {
+        const cur = exercisesToggle.getAttribute('aria-checked');
+        if (cur === 'true' || cur === 'false') {
+          exercisesToggle.setAttribute('aria-checked', cur === 'true' ? 'false' : 'true');
+        }
+      });
+      actionsToggle.addEventListener('click', () => {
+        const willOpen = actionsMenu.hidden;
+        actionsMenu.hidden = !willOpen;
+        actionsToggle.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+      });
+      document
+        .querySelector('[data-testid="analysis-report-display-settings-open"]')
+        .addEventListener('click', () => {
+          actionsMenu.hidden = true;
+          actionsToggle.setAttribute('aria-expanded', 'false');
+          if (window.__arvInvalidExercisesToggleAria) {
+            exercisesToggle.setAttribute('aria-checked', 'maybe');
+          } else {
+            let checked = window.__arvExercisesDisplayToggle === 'false' ? 'false' : 'true';
+            if (window.__arvDisplaySettingsPersistMismatch) {
+              checked = checked === 'true' ? 'false' : 'true';
+            }
+            exercisesToggle.setAttribute('aria-checked', checked);
+          }
+          settingsRoot.hidden = false;
+          if (window.__arvDisplaySettingsRootNoBoundingBox) {
+            settingsRoot.style.position = 'fixed';
+            settingsRoot.style.left = '0';
+            settingsRoot.style.top = '0';
+            settingsRoot.style.width = '0';
+            settingsRoot.style.height = '0';
+            settingsRoot.style.overflow = 'visible';
+          }
+        });
+      document
+        .querySelector('[data-testid="analysis-report-display-settings-save"]')
+        .addEventListener('click', () => {
+          if (window.__arvDisplaySettingsSaveFails) {
+            return;
+          }
+          const next = exercisesToggle.getAttribute('aria-checked');
+          if (next !== 'true' && next !== 'false') {
+            return;
+          }
+          if (window.__arvDisplaySettingsSaveNoop) {
+            settingsRoot.hidden = true;
+            return;
+          }
+          window.__arvExercisesDisplayToggle = next;
+          settingsRoot.hidden = true;
+          buildRecommendations();
+        });
+      document
+        .querySelector('[data-testid="analysis-report-display-settings-cancel"]')
+        .addEventListener('click', () => {
+          settingsRoot.hidden = true;
+        });
+    }
+
+    wireReportActionsMenu();
+
+    document.getElementById('bottom-history-control').addEventListener('click', (e) => {
+      e.preventDefault();
+      openHistoryFromBottom();
+    });
+    document.querySelector('[data-testid="cirs-analysis-back"]').addEventListener('click', () => {
+      historyPage.hidden = true;
+      customerPage.hidden = false;
+      history.pushState({}, '', `/customers/${CUSTOMER_ID}`);
+    });
+
+    function bootReportDirect() {
+      window.__arvFlowOrder = [];
+      muscleControlsMarked = false;
+      globalListPage.hidden = true;
+      setReportPanelVisible(true);
+      const customer = window.__arvWrongCustomer ? 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' : CUSTOMER_ID;
+      const analysis = window.__arvWrongAnalysis ? 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' : ANALYSIS_ID;
+      reportRoot.setAttribute('data-customer-id', customer);
+      reportRoot.setAttribute('data-analysis-id', analysis);
+      if (window.__arvMode === 'load_error') {
+        reportRoot.setAttribute('data-load-state', 'error');
+      } else if (window.__arvEmitFetchAnalysisReportOnBoot) {
+        reportRoot.setAttribute('data-load-state', 'loading');
+        const apiBase = window.__arvReportApiBase || 'https://api-stg.epose.com/report';
+        const accountId = window.__arvReportAccountId || 'fixture-account';
+        void fetch(`${apiBase}/fetch_analysis_report?accountId=${encodeURIComponent(accountId)}&customerId=${encodeURIComponent(customer)}&analysisId=${encodeURIComponent(analysis)}`)
+          .then((res) => {
+            if (!window.__arvFetchLeavesLoading && res.ok) {
+              reportRoot.setAttribute('data-load-state', 'ready');
+            }
+          })
+          .catch(() => {
+            reportRoot.setAttribute('data-load-state', 'error');
+          });
+      } else {
+        reportRoot.setAttribute('data-load-state', 'ready');
+      }
+      applyReportPresentationFlags();
+      buildReportSections();
+      buildMuscleSection();
+      buildRecommendations();
+      syncBottomHistoryControlLabel();
+      history.replaceState({}, '', `/customers/${customer}/reports/${analysis}`);
+    }
+
+    bootReportDirect();
+  </script>
+</body>
+</html>

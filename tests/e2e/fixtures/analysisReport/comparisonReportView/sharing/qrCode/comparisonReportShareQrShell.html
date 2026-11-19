@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>Comparison Report Share QR fixture</title>
+  <style>
+    [hidden] { display: none !important; }
+    .fixture-sticky-header { position: fixed; top: 0; left: 0; right: 0; height: 64px; z-index: 1000; display: flex; align-items: center; padding: 0 16px; background: #fff; border-bottom: 1px solid #eee; }
+    body { margin: 0; padding-top: 64px; }
+    #comparison-root section { min-height: 120px; margin: 24px 0; border: 1px solid #ddd; padding: 8px; }
+    #comparison-root { min-height: 2400px; }
+    .comparison-report-selector-row { margin: 16px 0 24px; max-width: 360px; }
+    .ant-select { width: 100%; font-size: 14px; }
+    .ant-select-selector { position: relative; min-height: 40px; border: 1px solid #d9d9d9; border-radius: 6px; padding: 4px 8px; cursor: pointer; background: #fff; }
+    .ant-select-selection-item { position: absolute; inset: 0; display: flex; align-items: center; gap: 8px; padding: 0 8px; pointer-events: auto; z-index: 2; }
+    .ant-select-selection-search-input { width: 100%; height: 32px; border: 0; opacity: 0; pointer-events: none; }
+    .analysis-report-comparison-options-popup { position: fixed; top: 80px; left: 80px; z-index: 2000; background: #fff; border: 1px solid #ccc; padding: 8px; }
+    .comparison-actions-row { margin: 24px 0; }
+    #share-qr-dialog-root .ant-modal-wrap { position: fixed; inset: 0; z-index: 3000; display: flex; align-items: flex-start; justify-content: center; padding-top: 96px; }
+    #share-qr-dialog-root .ant-modal { background: #fff; min-width: 320px; min-height: 120px; box-shadow: 0 4px 12px rgba(0,0,0,.15); }
+    #share-qr-dialog-root.arv-share-qr-root-no-box { position: fixed; width: 0; height: 0; overflow: visible; }
+    .fixture-qr-code { width: 120px; height: 120px; background: repeating-linear-gradient(45deg, #111 0 4px, #fff 4px 8px); }
+    .comparison-section-title { font-weight: 600; }
+  </style>
+</head>
+<body>
+  <header class="ant-layout-header hide-on-print fixture-sticky-header"><span>ログイン中：</span><span>fixture user</span></header>
+  <div id="single-view">
+    <div data-testid="analysis-report" data-analysis-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001" data-customer-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" data-load-state="ready">
+      <div data-testid="analysis-report-summary">summary</div>
+    </div>
+    <button type="button" data-testid="analysis-report-compare-open">比較</button>
+  </div>
+  <div id="comparison-view" hidden>
+    <div id="comparison-root" data-testid="analysis-report-comparison" data-customer-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa">
+      <div class="comparison-report-selector-row">
+        <div class="ant-select ant-select-single">
+          <div class="ant-select-selector" role="combobox" tabindex="0">
+            <span class="ant-select-selection-item"><span>10回目</span><div>2025/10/13 14:22</div></span>
+            <span class="ant-select-selection-search">
+              <input type="search" readonly class="ant-select-selection-search-input" data-testid="analysis-report-comparison-selector" data-comparison-slot="left" aria-expanded="false" />
+            </span>
+          </div>
+        </div>
+      </div>
+      <p data-testid="analysis-report-comparison-loading" data-comparison-slot="left" hidden>loading</p>
+      <div data-testid="analysis-report-comparison-column" data-comparison-slot="left" data-analysis-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001">
+        <section><div class="comparison-section-title">立位矢状面</div></section>
+        <section><div class="comparison-section-title">立位前額面</div></section>
+        <section><div class="comparison-section-title">姿勢タイプ</div></section>
+        <section><div class="comparison-section-title">重心位置</div></section>
+      </div>
+      <div data-testid="analysis-report-comparison-column" data-comparison-slot="right" data-analysis-id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2">
+        <section><div class="comparison-section-title">立位矢状面</div></section>
+        <section><div class="comparison-section-title">立位前額面</div></section>
+        <section><div class="comparison-section-title">姿勢タイプ</div></section>
+        <section><div class="comparison-section-title">重心位置</div></section>
+      </div>
+      <div class="comparison-actions-row">
+        <button type="button" id="comparison-actions-toggle" data-testid="analysis-report-actions-toggle" aria-expanded="false">actions</button>
+        <div id="comparison-actions-menu" data-testid="analysis-report-actions-menu" data-report-view="comparison" hidden>
+          <div data-testid="analysis-report-share-qr-open">QRコードで共有</div>
+        </div>
+      </div>
+    </div>
+    <div id="comparison-options-panel" class="analysis-report-comparison-options-popup" hidden role="listbox">
+      <div data-testid="analysis-report-comparison-option" data-analysis-id="cccccccc-cccc-4ccc-8ccc-cccccccc0003" role="option">opt3</div>
+    </div>
+  </div>
+  <div id="share-qr-dialog-root" data-testid="analysis-report-share-qr-dialog" class="arv-share-qr-root-no-box" hidden>
+    <div class="ant-modal-wrap">
+      <div class="ant-modal" role="dialog" aria-modal="true">
+        <div class="ant-modal-body">
+          <div id="qr-code-slot" data-testid="analysis-report-share-qr-code" class="fixture-qr-code"></div>
+        </div>
+        <button type="button" data-testid="analysis-report-share-qr-close"><span>とじる</span></button>
+      </div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      const flags = window.__crqFlags || {};
+      const single = document.getElementById('single-view');
+      const comparison = document.getElementById('comparison-view');
+      const leftColumn = comparison.querySelector('[data-comparison-slot="left"][data-testid="analysis-report-comparison-column"]');
+      const rightColumn = comparison.querySelector('[data-comparison-slot="right"][data-testid="analysis-report-comparison-column"]');
+      const selectorSurface = comparison.querySelector('.ant-select-selector');
+      const searchInput = comparison.querySelector('[data-testid="analysis-report-comparison-selector"]');
+      const panel = document.getElementById('comparison-options-panel');
+      const actionsToggle = document.getElementById('comparison-actions-toggle');
+      const actionsMenu = document.getElementById('comparison-actions-menu');
+      const qrRoot = document.getElementById('share-qr-dialog-root');
+      const qrClose = qrRoot.querySelector('[data-testid="analysis-report-share-qr-close"]');
+      const qrCodeSlot = document.getElementById('qr-code-slot');
+
+      document.querySelector('[data-testid="analysis-report-compare-open"]').addEventListener('click', () => {
+        single.hidden = true;
+        comparison.hidden = false;
+      });
+
+      function setSelectorExpanded(open) {
+        const value = open ? 'true' : 'false';
+        searchInput.setAttribute('aria-expanded', value);
+        selectorSurface.setAttribute('aria-expanded', value);
+      }
+      selectorSurface.addEventListener('click', () => {
+        panel.hidden = false;
+        setSelectorExpanded(true);
+      });
+      panel.addEventListener('click', (ev) => {
+        const opt = ev.target.closest('[data-testid="analysis-report-comparison-option"]');
+        if (!opt) return;
+        const id = opt.getAttribute('data-analysis-id');
+        if (!id) return;
+        panel.hidden = true;
+        setSelectorExpanded(false);
+        leftColumn.setAttribute('data-analysis-id', id);
+      });
+
+      actionsToggle.addEventListener('click', () => {
+        const open = actionsMenu.hidden;
+        actionsMenu.hidden = !open;
+        actionsToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+
+      actionsMenu.querySelector('[data-testid="analysis-report-share-qr-open"]').addEventListener('click', () => {
+        actionsMenu.hidden = true;
+        actionsToggle.setAttribute('aria-expanded', 'false');
+        qrRoot.hidden = false;
+        qrRoot.setAttribute('data-report-view', 'comparison');
+        qrRoot.setAttribute('data-left-analysis-id', leftColumn.getAttribute('data-analysis-id') || '');
+        qrRoot.setAttribute('data-right-analysis-id', rightColumn.getAttribute('data-analysis-id') || '');
+        if (flags.missingQrContent && qrCodeSlot) {
+          qrCodeSlot.remove();
+        }
+      });
+
+      qrClose.addEventListener('click', () => {
+        if (flags.closeFails) return;
+        if (flags.pairChangesOnClose) {
+          leftColumn.setAttribute('data-analysis-id', 'dddddddd-dddd-4ddd-8ddd-dddddddddddd');
+        }
+        qrRoot.hidden = true;
+      });
+    })();
+  </script>
+</body>
+</html>

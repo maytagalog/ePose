@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { buildEmail, emailWithDotAt } from '../../register/emailState';
+import { isRegistrationPoolEmailExtended } from '../../register/emailStateThreeDotPool';
 
 export const CHANGE_EMAIL_SCHEMA_VERSION = 1;
 export const CHANGE_EMAIL_STATE_FILENAME = 'e2e-change-email-state.json';
@@ -28,6 +29,9 @@ export const CHANGE_EMAIL_DOMAIN = 'gmail.com';
  *   newNext = Math.max(nextTargetIndex, highWaterMark, pending.targetIndex + 1)
  * Clear pendingChange only after confirming whether that pending target succeeded.
  * Do not lower counters or automatically recycle the released original email.
+ *
+ * Pre-change state backups: test-state/email/backups/e2e-change-email-state.json.backup-*
+ * Reconciliation records: test-state/email/reconciliation/e2e-change-email-reconciliation-*.json
  *
  * Local state/lock files coordinate only processes sharing the same repo paths.
  */
@@ -125,31 +129,9 @@ export function buildTwoDotEmailFromIndex(
     return buildTwoDotEmail(localBase, domain, pos1, pos2);
 }
 
-/** Registration pool uses at most one dot; two-dot targets are disjoint from undotted/single-dot variants. */
+/** Registration pool: undotted, single-dot, or three-dot variants — not two-dot (change-email). */
 export function isRegistrationPoolEmail(localBase: string, domain: string, email: string): boolean {
-    const at = email.lastIndexOf('@');
-    if (at < 0) {
-        return false;
-    }
-    const local = email.slice(0, at);
-    const emailDomain = email.slice(at + 1);
-    if (emailDomain !== domain) {
-        return false;
-    }
-    const undotted = `${localBase}@${domain}`;
-    if (email === undotted) {
-        return true;
-    }
-    const dotCount = (local.match(/\./g) ?? []).length;
-    if (dotCount !== 1) {
-        return false;
-    }
-    for (let p = 0; p <= localBase.length - 1; p++) {
-        if (buildEmail(localBase, domain, p) === email) {
-            return true;
-        }
-    }
-    return false;
+    return isRegistrationPoolEmailExtended(localBase, domain, email);
 }
 
 export function changeEmailStateFilePath(repoRoot: string): string {

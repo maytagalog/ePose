@@ -1,0 +1,48 @@
+<testsuites id="" name="" tests="2" failures="0" skipped="0" errors="0" time="396.706754">
+<testsuite name="e2e/fullE2ESmokePart1.spec.ts" timestamp="2026-10-26T04:41:20.338Z" hostname="chromium" tests="1" failures="0" skipped="0" time="392.85" errors="0">
+<testcase name="fullE2ESmokePart1" classname="e2e/fullE2ESmokePart1.spec.ts" time="392.85">
+<system-out>
+<![CDATA[Smoke email position: 13 (persistent)
+Using test email: synthetic-allocated@example.com
+PART1_RUN_STARTED {"smokePart":1,"environment":"staging","accountEmail":"synthetic-allocated@example.com","accountSource":"new_registration","activeCoverage":["Registration","Login","Online Booking and confirmation email","Customer Add/Edit/Delete","My Page Profile (Furigana)","Change Email","Change Password","Company Information","Display Item Settings","Credit-card Plan Purchase and Payment History","Referral Coupon Email","Withdrawal"],"deferredCoverage":["Posture Analysis","Referral Coupon Copy"],"deferredReasons":{"Posture Analysis":"outside Part 1 scope","Referral Coupon Copy":"pending product issue"}}
+Email consumed at position 13. Saved nextDotPosition=14 to e2e-email-state.json
+CUSTOMER_CREATE_INTENT {"name":"E2E Register Customer Fixture","furigana":"テストトウロクウレモツニタササ"}
+CREATED_CUSTOMER_REF {"name":"E2E Register Customer Fixture","furigana":"テストトウロクウレモツニタササ","customerId":"c2222222-2222-4222-8222-222222222222"}
+EDIT_CUSTOMER_INTENT {"customerId":"c2222222-2222-4222-8222-222222222222","from":{"name":"E2E Register Customer Fixture","furigana":"テストトウロクウレモツニタササ","heightDisplay":"142 cm"},"to":{"name":"E2E Register Customer Fixture Edited","furigana":"テストトウロクウレモツニタササ","heightDisplay":"150 cm"}}
+UPDATED_CUSTOMER_REF {"name":"E2E Register Customer Fixture Edited","furigana":"テストトウロクウレモツニタササ","customerId":"c2222222-2222-4222-8222-222222222222"}
+DELETE_CUSTOMER_INTENT {"customerId":"c2222222-2222-4222-8222-222222222222","name":"E2E Register Customer Fixture Edited","furigana":"テストトウロクウレモツニタササ"}
+MY_PAGE_PROFILE_FURIGANA_UPDATE {"from":"","to":"テストマイツフシテニタササ"}
+Change Email target index: 11
+Change Email current: synthetic-allocated@example.com
+Change Email target: synthetic-changed@example.com
+CHANGE_EMAIL_INTENT {"currentEmail":"synthetic-allocated@example.com","targetEmail":"synthetic-changed@example.com","targetIndex":11}
+Change Email target index 11 committed. nextTargetIndex=12
+CHANGE_PASSWORD_INTENT {"accountEmail":"synthetic-changed@example.com","otpRequested":false}
+CHANGE_PASSWORD_PROGRESS {"accountEmail":"synthetic-changed@example.com","otpRequested":true,"confirmationAttempted":true,"successUiObserved":true,"freshLoginVerificationCompleted":false,"mainSessionAuthenticatedAfterReturn":true,"mainSessionRecoveryPerformed":false}
+COMPANY_INFORMATION_UPDATE_INTENT {"accountEmail":"synthetic-changed@example.com","before":{"businessName":"Business","telephoneNumber":"09000000001","stateProvinceRegion":"Example Region","street":"Example Street","countryTitle":"Example Country"},"after":{"businessName":"SmokeBusinessFixture","telephoneNumber":"09000000002","stateProvinceRegion":"Fixture Region","street":"Fixture Street","countryCode":"XX","countryTitle":"Fixture Country","postalCode":"00000"}}
+DISPLAY_ITEM_SETTINGS_UPDATE_INTENT {"accountEmail":"synthetic-changed@example.com","settingLabel":"エクササイズとストレッチ","field":"showExercisesAndStretches","initialChecked":true,"intendedChecked":false}
+DISPLAY_ITEM_SETTINGS_PERSISTED {"accountEmail":"synthetic-changed@example.com","field":"showExercisesAndStretches","persistedChecked":false,"saveToast":"更新しました。"}
+PLAN_PURCHASE_ELIGIBILITY {"accountEmail":"synthetic-changed@example.com","eligibilityCategory":"eligible","currentStatus":null,"currentPlanName":null,"currentProductId":null,"currentInterval":null,"currentIntervalCount":null,"currentPaid":null,"hasUpcoming":false,"upcomingPlanName":null,"upcomingPaid":null,"hasPendingBank":false,"hasRequiresAction":false}
+PLAN_PURCHASE_SELECTION {"accountEmail":"synthetic-changed@example.com","planDisplayName":"3ヶ月プラン","totalAmountYen":29400,"monthDuration":3}
+PLAN_PURCHASE_PERSISTED {"accountEmail":"synthetic-changed@example.com","plan":"3ヶ月プラン","amountYen":29400,"paymentHistoryId":"pi_SYNTHETIC_TEST_001","purchaseCorrelationId":"sub_SYNTHETIC_TEST_001","cardLast4":"4242","finalRoute":"/contract"}
+REFERRAL_COUPON_EMAIL_VERIFIED {"recipient":"synthetic-changed@example.com","referralCode":"SYNTH01","gmailMessageId":"synthetic-msg-0001","sendRequestEmail":"synthetic-changed@example.com","modalClosed":true,"codeMatchVerified":true,"finalPathname":"/coupon"}
+WITHDRAWAL_FINAL_DELETE_ATTEMPTED {"accountEmail":"synthetic-changed@example.com"}
+WITHDRAWAL_FLOW_VERIFIED {"accountEmail":"synthetic-changed@example.com","renewalStopped":true,"rejectedLoginVerified":true,"finalPathname":"/login","boundaries":{"lastBoundary":"withdrawal:rejected-login","renewalStopAttempted":true,"renewalStopVerified":true,"reasonEntryCompleted":true,"finalConfirmationReached":true,"finalDeleteAttempted":true}}
+PART1_RUN_COMPLETED {"smokePart":1,"environment":"staging","registrationEmail":"synthetic-allocated@example.com","finalAccountEmail":"synthetic-changed@example.com","accountWithdrawn":true,"finalOrigin":"https://app-stg.epose.com","finalPathname":"/login"}
+]]>
+</system-out>
+</testcase>
+</testsuite>
+<testsuite name="e2e/fullE2ESmokePart2.spec.ts" timestamp="2026-10-26T04:41:20.338Z" hostname="chromium" tests="1" failures="0" skipped="0" time="37.56" errors="0">
+<testcase name="fullE2ESmokePart2" classname="e2e/fullE2ESmokePart2.spec.ts" time="37.56">
+<system-out>
+<![CDATA[PART2_RUN_STARTED {"smokePart":2,"environment":"staging","accountEmail":"synthetic-part2@example.com","accountSource":"existing_account","activeCoverage":["Login","Limit Dialog","Logout"],"deferredCoverage":["CIRS","Analysis Report"],"deferredReason":"awaiting developer automation attributes"}
+PART2_LOGIN_VERIFIED {"accountEmail":"synthetic-part2@example.com","identityEvidenceStatus":"verified","profileEmailVerified":true,"sessionTakeoverDetected":false,"sessionTakeoverConfirmed":false}
+PART2_LIMIT_DIALOG_VERIFIED {"accountEmail":"synthetic-part2@example.com","automaticDialogOutcome":"dismissed","triggerPlanChange":"verified_dismissed","triggerQuickAnalysis":"verified_dismissed","triggerNewAnalysis":"verified_dismissed","freePlanVerified":true,"neverPurchasedVerified":"inconclusive","accountAgeStatus":"not_verifiable","paymentHistoryStatus":"not_observed","subscriptionObserved":true,"finalPathname":"/customers"}
+PART2_LOGOUT_VERIFIED {"accountEmail":"synthetic-part2@example.com","logoutAttempted":true,"appRedirectVerified":true,"loginFormVerified":true,"protectedRouteRejected":true,"finalPathname":"/login"}
+PART2_RUN_COMPLETED {"accountEmail":"synthetic-part2@example.com","lastStartedStep":"logout","lastCompletedStep":"logout","featureOutcomes":{"login":"passed","limitDialog":"passed","logout":"passed"},"finalOrigin":"https://app-stg.epose.com","finalPathname":"/login"}
+]]>
+</system-out>
+</testcase>
+</testsuite>
+</testsuites>

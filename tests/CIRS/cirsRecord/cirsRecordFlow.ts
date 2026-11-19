@@ -1,32 +1,36 @@
 import { expect, type Locator, type Page, type Response } from '@playwright/test';
 import {
     assertCustomerFlowNotBlocked,
-    assertCustomersListInitReady,
     assertSelectedCustomerIdentity,
 } from '../../accountRegistration/customerFlow';
 import {
-    openFirstCustomerInDisplayedOrder,
-    type OpenCustomerFromPhonebookEvidence,
-} from '../../limitDialog/limitDialogFlow';
+    beginResponseDetailCapture,
+    type ResponseDetailLoadResult,
+} from '../responseDetails/responseDetailsApi';
+import type { OpenCustomerFromPhonebookEvidence } from '../../limitDialog/limitDialogFlow';
 import {
     beginFetchCustomerServicesCapture,
     type CustomerServicesCapture,
     type CustomerServicesListSnapshot,
     CirsRecordCustomerServicesError,
     FETCH_CUSTOMER_SERVICES_ORDER_EVIDENCE,
-    resolveCustomerServiceIndex,
 } from './cirsRecordCustomerServices';
 import {
-    clickInteractionRecordRowAtIndex,
-    expectInteractionRecordRowCount,
+    clickInteractionRecordRowByServiceId,
+    expectFirstRecordRowServiceId,
     FULL_LIST_ROW_DOM_EVIDENCE,
     INTERACTION_RECORD_LIST_ICON_ALT,
     INTERACTION_RECORD_ROW_DATE_PATTERN,
-    interactionRecordRowLocators,
-    interactionRecordRowScopeOnFullListPage,
-    interactionRecordRowsInCustomerSection,
+    interactionRecordRowByServiceId,
+    interactionRecordRowsInScope,
     interactionRecordArrowWrapperMislocator,
 } from './cirsRecordInteractionRows';
+import { CirsRecordRunTracker } from './cirsRecordReporting';
+import {
+    CIRS_TEST_IDS,
+    CUSTOMER_ID_ATTR,
+    CUSTOMER_SERVICE_ID_ATTR,
+} from './cirsRecordTestIds';
 
 export {
     INTERACTION_RECORD_LIST_ICON_ALT,
@@ -102,6 +106,8 @@ export type CirsRecordContext = {
     recordIdentitySource: Exclude<CirsRecordIdentitySource, 'pending'>;
     customerIdFromApi: string | null;
     apiParseNotes: string[];
+    /** response_detail captured before the final record reopen navigation. */
+    responseDetailLoad?: ResponseDetailLoadResult;
 };
 
 export type CirsRecordFlowEnvironment = {
@@ -171,7 +177,86 @@ function customersMain(page: Page): Locator {
  * Accessible name is not literally "<".
  */
 export function pageBackControl(page: Page): Locator {
-    return page.locator('.back').locator('visible=true').first();
+    return page.getByTestId(CIRS_TEST_IDS.recordBack).locator('visible=true').first();
+}
+
+export function cirsRecordSection(main: Locator): Locator {
+    return main.getByTestId(CIRS_TEST_IDS.recordSection);
+}
+
+export async function assertCirsRecordSectionReady(main: Locator): Promise<Locator> {
+    const sections = cirsRecordSection(main);
+    await expect
+        .poll(async () => sections.count(), {
+            timeout: ACTION_TIMEOUT_MS,
+            message: 'Waiting for exactly one cirs-record-section.',
+        })
+        .toBe(1);
+    const section = sections.first();
+    await expect(section.getByTestId(CIRS_TEST_IDS.recordLoading)).toBeHidden({
+        timeout: ACTION_TIMEOUT_MS,
+    });
+    return section;
+}
+
+export async function assertCirsRecordDetailContainer(
+    page: Page,
+    expectedCustomerId: string,
+    expectedRecordId: string
+): Promise<void> {
+    const detail = page.getByTestId(CIRS_TEST_IDS.recordDetail);
+    await expect(detail).toBeVisible({ timeout: ACTION_TIMEOUT_MS });
+    await expect
+        .poll(async () => detail.getAttribute(CUSTOMER_ID_ATTR), {
+            timeout: ACTION_TIMEOUT_MS,
+            message: 'cirs-record-detail customer id',
+        })
+        .toBe(expectedCustomerId);
+    await expect
+        .poll(async () => detail.getAttribute(CUSTOMER_SERVICE_ID_ATTR), {
+            timeout: ACTION_TIMEOUT_MS,
+            message: 'cirs-record-detail record id',
+        })
+        .toBe(expectedRecordId);
+}
+
+export type OpenCustomerFromCustomerListEvidence = OpenCustomerFromPhonebookEvidence;
+
+export async function assertCustomerListReadyForCirs(page: Page): Promise<void> {
+    await assertCustomerFlowNotBlocked(page);
+    await expect(page).toHaveURL(/\/customers(?:\/[0-9a-f-]{36})?\/?(?:\?|$)/i, {
+        timeout: NAVIGATION_TIMEOUT_MS,
+    });
+    const list = page.getByTestId(CIRS_TEST_IDS.customerList);
+    await expect(list).toBeVisible({ timeout: ACTION_TIMEOUT_MS });
+    await expect(page.getByTestId(CIRS_TEST_IDS.customerListLoading)).toBeHidden({
+        timeout: ACTION_TIMEOUT_MS,
+    });
+}
+
+export async function openFirstCustomerFromCustomerList(
+    page: Page
+): Promise<OpenCustomerFromCustomerListEvidence> {
+    await assertCustomerListReadyForCirs(page);
+    const row = page.getByTestId(CIRS_TEST_IDS.customerRow).first();
+    await expect(row).toBeVisible({ timeout: ACTION_TIMEOUT_MS });
+    const customerId = await row.getAttribute(CUSTOMER_ID_ATTR);
+    if (!customerId) {
+        throw new CirsRecordFlowError('First customer-row is missing data-customer-id.');
+    }
+    const nameLocator = row.getByTestId(CIRS_TEST_IDS.customerName);
+    const nameFromRow = (await nameLocator.textContent())?.trim() ?? '';
+    if (!nameFromRow) {
+        throw new CirsRecordFlowError('First customer-row is missing customer-name text.');
+    }
+    await row.click({ timeout: ACTION_TIMEOUT_MS });
+    await expect(page).toHaveURL(CUSTOMER_DETAIL_URL, { timeout: NAVIGATION_TIMEOUT_MS });
+    const main = customersMain(page);
+    const heading = main.getByRole('heading', { level: 3, name: nameFromRow, exact: true });
+    await expect(heading).toBeVisible({ timeout: ACTION_TIMEOUT_MS });
+    const furiganaCandidates = main.getByText(/.+/).filter({ hasNot: heading });
+    const furigana = (await furiganaCandidates.first().textContent())?.trim() ?? nameFromRow;
+    return { customerId, name: nameFromRow, furigana };
 }
 
 /**
@@ -197,14 +282,7 @@ export function interactionRecordsSectionCandidates(main: Locator): Locator {
 }
 
 export async function assertUniqueInteractionRecordsSection(main: Locator): Promise<Locator> {
-    const sections = interactionRecordsSectionCandidates(main);
-    await expect
-        .poll(async () => sections.count(), {
-            timeout: ACTION_TIMEOUT_MS,
-            message: 'Waiting for exactly one 応対記録 section (heading, list control, and rendered rows).',
-        })
-        .toBe(1);
-    return sections.first();
+    return assertCirsRecordSectionReady(main);
 }
 
 /** @deprecated Prefer {@link assertUniqueInteractionRecordsSection} — may match 0 or many. */
@@ -213,7 +291,7 @@ export function interactionRecordsSection(main: Locator): Locator {
 }
 
 export function interactionRecordSectionListControl(section: Locator): Locator {
-    return section.getByRole('button', { name: INTERACTION_RECORD_SECTION_LIST_BUTTON_NAME });
+    return section.getByTestId(CIRS_TEST_IDS.recordListOpen);
 }
 
 function rethrowCustomerServicesError(error: unknown): never {
@@ -223,34 +301,91 @@ function rethrowCustomerServicesError(error: unknown): never {
     throw error;
 }
 
-async function assertRenderedRowCountMatchesApi(
-    rowScope: Locator,
-    snapshot: CustomerServicesListSnapshot,
-    contextLabel: string
-): Promise<void> {
-    const expected = snapshot.customerServiceIdsInApiOrder.length;
-    if (expected === 0) {
-        throw new CirsRecordFlowError(`${contextLabel}: fetch_customer_services returned an empty list.`);
-    }
-    await expectInteractionRecordRowCount(rowScope, expected, contextLabel);
-}
-
-async function assertInteractionRecordRowVisibleByCustomerServiceId(
+async function assertRecordRowVisibleByServiceId(
     rowScope: Locator,
     customerServiceId: string,
-    snapshot: CustomerServicesListSnapshot,
     contextLabel: string
 ): Promise<void> {
-    let index: number;
+    const row = interactionRecordRowByServiceId(rowScope, customerServiceId);
     try {
-        index = resolveCustomerServiceIndex(snapshot, customerServiceId);
+        await expect(row).toBeVisible({ timeout: ACTION_TIMEOUT_MS });
     } catch (error) {
-        rethrowCustomerServicesError(error);
+        const message = error instanceof Error ? error.message : String(error);
+        throw new CirsRecordFlowError(
+            `${contextLabel}: record ${customerServiceId} is not visible in the current list scope. ` +
+                `If this is an older retained record, it may require full-list pagination (24 per page) — not automated here. ${message}`
+        );
     }
-    await assertRenderedRowCountMatchesApi(rowScope, snapshot, contextLabel);
-    await expect(interactionRecordRowLocators(rowScope).nth(index)).toBeVisible({
-        timeout: ACTION_TIMEOUT_MS,
-    });
+}
+
+async function assertRecordRowCustomerServiceIdentity(
+    rowScope: Locator,
+    customerId: string,
+    customerServiceId: string,
+    contextLabel: string
+): Promise<void> {
+    await assertRecordRowVisibleByServiceId(rowScope, customerServiceId, contextLabel);
+    const row = interactionRecordRowByServiceId(rowScope, customerServiceId);
+    await expect
+        .poll(async () => row.getAttribute(CUSTOMER_ID_ATTR), {
+            timeout: ACTION_TIMEOUT_MS,
+            message: `${contextLabel}: data-customer-id on cirs-record-row ${customerServiceId}`,
+        })
+        .toBe(customerId);
+}
+
+/**
+ * Full interaction-record list page readiness (does not assert row order).
+ * Title display name may differ from customer detail heading (e.g. furigana on staging).
+ */
+export async function assertCirsRecordFullListReady(
+    page: Page,
+    customerId: string,
+    customerServiceId: string
+): Promise<Locator> {
+    const expectedListPath = `/customers/${customerId}/interaction-records`;
+    await expect(page).toHaveURL(
+        new RegExp(`/customers/${customerId}/interaction-records(?:/|$|\\?)`, 'i'),
+        { timeout: NAVIGATION_TIMEOUT_MS }
+    );
+    await expect(page).not.toHaveURL(INTERACTION_RECORD_DETAIL_URL);
+    await expect
+        .poll(() => new URL(page.url()).pathname.replace(/\/$/, ''), {
+            timeout: ACTION_TIMEOUT_MS,
+            message: 'customer-specific full-list pathname',
+        })
+        .toBe(expectedListPath);
+
+    const listContainers = page.getByTestId(CIRS_TEST_IDS.recordList);
+    await expect
+        .poll(async () => listContainers.count(), {
+            timeout: ACTION_TIMEOUT_MS,
+            message: 'exactly one cirs-record-list container',
+        })
+        .toBe(1);
+    const list = listContainers.first();
+    await expect(list).toBeVisible({ timeout: ACTION_TIMEOUT_MS });
+
+    const visibleListTitle = page
+        .getByText(INTERACTION_RECORD_LIST_TITLE_SUFFIX, { exact: false })
+        .locator('visible=true')
+        .first();
+    await expect(visibleListTitle).toBeVisible({ timeout: ACTION_TIMEOUT_MS });
+    await expect
+        .poll(async () => ((await visibleListTitle.textContent()) ?? '').trim().endsWith(INTERACTION_RECORD_LIST_TITLE_SUFFIX), {
+            timeout: ACTION_TIMEOUT_MS,
+            message: 'full-list title ending in 応対記録一覧',
+        })
+        .toBe(true);
+
+    await assertRecordRowCustomerServiceIdentity(
+        list,
+        customerId,
+        customerServiceId,
+        'full cirs-record-list target row'
+    );
+
+    return list;
 }
 
 async function clickInteractionRecordRowByCustomerServiceId(
@@ -258,18 +393,12 @@ async function clickInteractionRecordRowByCustomerServiceId(
     rowScope: Locator,
     customerId: string,
     customerServiceId: string,
-    snapshot: CustomerServicesListSnapshot,
     contextLabel: string
 ): Promise<void> {
-    let index: number;
-    try {
-        index = resolveCustomerServiceIndex(snapshot, customerServiceId);
-    } catch (error) {
-        rethrowCustomerServicesError(error);
-    }
-    await assertRenderedRowCountMatchesApi(rowScope, snapshot, contextLabel);
-    await clickInteractionRecordRowAtIndex(rowScope, index);
+    await assertRecordRowVisibleByServiceId(rowScope, customerServiceId, contextLabel);
+    await clickInteractionRecordRowByServiceId(rowScope, customerServiceId);
     await expect(page).toHaveURL(INTERACTION_RECORD_DETAIL_URL, { timeout: NAVIGATION_TIMEOUT_MS });
+    await assertCirsRecordDetailContainer(page, customerId, customerServiceId);
     const routeCustomerId = parseCustomerIdFromUrl(page.url());
     const routeServiceId = parseInteractionRecordIdFromUrl(page.url());
     if (routeServiceId !== customerServiceId) {
@@ -404,7 +533,7 @@ async function assertCustomerPageReadyForCirsRecord(
     await assertSameCustomerOnDetailPage(page, customerId, customerName, customerFurigana);
     const main = customersMain(page);
     await assertCustomerDetailsCollapsedForCirs(main);
-    await assertUniqueInteractionRecordsSection(main);
+    await assertCirsRecordSectionReady(main);
     return main;
 }
 
@@ -422,21 +551,13 @@ async function assertSameCustomerOnDetailPage(
 
 export async function assertCustomerSectionTopRecordMatchesServiceId(
     section: Locator,
-    snapshot: CustomerServicesListSnapshot,
+    _snapshot: CustomerServicesListSnapshot,
     expectedCustomerServiceId: string
 ): Promise<void> {
-    const apiTop = snapshot.customerServiceIdsInApiOrder[0];
-    if (apiTop !== expectedCustomerServiceId) {
-        throw new CirsRecordFlowError(
-            `fetch_customer_services first entry (${apiTop ?? 'none'}) != expected customerServiceId (${expectedCustomerServiceId}).`
-        );
-    }
-    await assertRenderedRowCountMatchesApi(section, snapshot, 'customer 応対記録 section (top-of-list)');
-    await assertInteractionRecordRowVisibleByCustomerServiceId(
+    await expectFirstRecordRowServiceId(
         section,
         expectedCustomerServiceId,
-        snapshot,
-        'customer 応対記録 section (top-of-list)'
+        'customer preview (cirs-record-section)'
     );
 }
 
@@ -450,6 +571,7 @@ export type RunCirsRecordFlowOptions = {
     env?: CirsRecordFlowEnvironment;
     /** When set, skip phonebook open (already on customer detail). */
     existingCustomer?: OpenCustomerFromPhonebookEvidence;
+    accountEmail?: string | null;
     /** Called whenever safe partial context is updated (success or failure paths). */
     onEvidence?: (evidence: CirsRecordRunEvidence) => void;
 };
@@ -467,14 +589,20 @@ export type RunCirsRecordVerificationOptions = {
     onEvidence?: (evidence: CirsRecordRunEvidence) => void;
 };
 
+type CirsRecordDetailListNavigationCycleResult = {
+    recordUrl: string;
+    responseDetailLoad: ResponseDetailLoadResult;
+};
+
 async function executeCirsRecordDetailListNavigationCycle(
     page: Page,
     customerId: string,
     customerName: string,
     customerFurigana: string,
     customerServiceId: string,
-    servicesCapture: CustomerServicesCapture
-): Promise<string> {
+    servicesCapture: CustomerServicesCapture,
+    tracker?: CirsRecordRunTracker
+): Promise<CirsRecordDetailListNavigationCycleResult> {
     const main = customersMain(page);
 
     await expect(page.getByRole('textbox').first()).toBeVisible({ timeout: ACTION_TIMEOUT_MS });
@@ -489,7 +617,7 @@ async function executeCirsRecordDetailListNavigationCycle(
 
     await assertCustomerPageReadyForCirsRecord(page, customerId, customerName, customerFurigana);
 
-    const section = await assertUniqueInteractionRecordsSection(main);
+    const section = await assertCirsRecordSectionReady(main);
 
     let snapshotAfterRecordBack: CustomerServicesListSnapshot;
     try {
@@ -497,22 +625,21 @@ async function executeCirsRecordDetailListNavigationCycle(
     } catch (error) {
         rethrowCustomerServicesError(error);
     }
+    tracker?.stepStarted('preview verification');
     await assertCustomerSectionTopRecordMatchesServiceId(
         section,
         snapshotAfterRecordBack,
         customerServiceId
     );
+    tracker?.logPreviewVerified(new URL(page.url()).pathname);
 
+    tracker?.stepStarted('full list verification');
     const sectionList = interactionRecordSectionListControl(section);
     await expect(sectionList).toBeVisible({ timeout: ACTION_TIMEOUT_MS });
     const snapshotOnFullListPromise = servicesCapture.waitForSnapshot({ fresh: true, kind: 'full_list' });
     await sectionList.click({ timeout: ACTION_TIMEOUT_MS });
 
-    await expect(page).toHaveURL(INTERACTION_RECORD_LIST_URL, { timeout: NAVIGATION_TIMEOUT_MS });
-    await expect(page).not.toHaveURL(INTERACTION_RECORD_DETAIL_URL);
-    await expect(
-        page.getByText(customerName, { exact: false }).filter({ hasText: INTERACTION_RECORD_LIST_TITLE_SUFFIX })
-    ).toBeVisible({ timeout: ACTION_TIMEOUT_MS });
+    const listRowScope = await assertCirsRecordFullListReady(page, customerId, customerServiceId);
 
     let snapshotOnFullList: CustomerServicesListSnapshot;
     try {
@@ -520,24 +647,28 @@ async function executeCirsRecordDetailListNavigationCycle(
     } catch (error) {
         rethrowCustomerServicesError(error);
     }
-    const listRowScope = interactionRecordRowScopeOnFullListPage(page);
     try {
-        await assertInteractionRecordRowVisibleByCustomerServiceId(
+        await expectFirstRecordRowServiceId(
             listRowScope,
             customerServiceId,
-            snapshotOnFullList,
-            'full 応対記録 list'
+            'full cirs-record-list (first page)'
+        );
+        await assertRecordRowVisibleByServiceId(
+            listRowScope,
+            customerServiceId,
+            'full cirs-record-list visibility'
         );
     } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         throw new CirsRecordFlowError(
             `${message}\n` +
-                `Full-list row DOM on staging is ${FULL_LIST_ROW_DOM_EVIDENCE.populatedFullListDom}. ` +
-                `Fixture uses ${FULL_LIST_ROW_DOM_EVIDENCE.fixtureListPanelId}. ` +
+                `Full-list uses ${FULL_LIST_ROW_DOM_EVIDENCE.populatedFullListDom}. ` +
+                `Preview (limit=3) and full list (24 per page) counts must not be equated. ` +
                 `API snapshot request=${snapshotOnFullList.requestUrl}; ` +
-                `index↔DOM order remains ${FETCH_CUSTOMER_SERVICES_ORDER_EVIDENCE.uiRenderOrderMapping}.`
+                `pagination beyond the first full-list page is not automated.`
         );
     }
+    tracker?.logListVerified(new URL(page.url()).pathname);
 
     const backFromList = pageBackControl(page);
     await expect(backFromList).toBeVisible({ timeout: ACTION_TIMEOUT_MS });
@@ -555,15 +686,18 @@ async function executeCirsRecordDetailListNavigationCycle(
     } catch (error) {
         rethrowCustomerServicesError(error);
     }
-    const reopenSection = await assertUniqueInteractionRecordsSection(main);
+    const reopenSection = await assertCirsRecordSectionReady(main);
+    tracker?.stepStarted('record reopen');
+    const responseDetailLoadPromise = beginResponseDetailCapture(page, customerServiceId);
     await clickInteractionRecordRowByCustomerServiceId(
         page,
         reopenSection,
         customerId,
         customerServiceId,
-        snapshotBeforeReopen,
-        'reopen from customer 応対記録 section'
+        'reopen from cirs-record-section'
     );
+    const responseDetailLoad = await responseDetailLoadPromise;
+    tracker?.logReopened(new URL(page.url()).pathname);
 
     await expect(
         page.getByText(INTERACTION_RECORD_DETAIL_TITLE, { exact: true }).locator('visible=true').first()
@@ -571,7 +705,7 @@ async function executeCirsRecordDetailListNavigationCycle(
         timeout: ACTION_TIMEOUT_MS,
     });
 
-    return page.url();
+    return { recordUrl: page.url(), responseDetailLoad };
 }
 
 /**
@@ -618,11 +752,10 @@ export async function runCirsRecordListNavigationVerification(
             input.customerFurigana
         );
 
-        const section = await assertUniqueInteractionRecordsSection(main);
+        const section = await assertCirsRecordSectionReady(main);
 
-        let snapshot: CustomerServicesListSnapshot;
         try {
-            snapshot = await servicesCapture.waitForSnapshot({ kind: 'customer_preview' });
+            await servicesCapture.waitForSnapshot({ kind: 'customer_preview' });
         } catch (error) {
             rethrowCustomerServicesError(error);
         }
@@ -632,8 +765,7 @@ export async function runCirsRecordListNavigationVerification(
             section,
             input.customerId,
             input.recordId,
-            snapshot,
-            'open existing record from customer 応対記録 section'
+            'open existing record from cirs-record-section'
         );
 
         await expect(
@@ -643,15 +775,16 @@ export async function runCirsRecordListNavigationVerification(
         evidence.recordUrl = page.url();
         publishEvidence();
 
-        const finalUrl = await executeCirsRecordDetailListNavigationCycle(
+        const cycleResult = await executeCirsRecordDetailListNavigationCycle(
             page,
             input.customerId,
             input.customerName,
             input.customerFurigana,
             input.recordId,
-            servicesCapture
+            servicesCapture,
+            undefined
         );
-        evidence.recordUrl = finalUrl;
+        evidence.recordUrl = cycleResult.recordUrl;
         publishEvidence();
 
         return {
@@ -659,12 +792,13 @@ export async function runCirsRecordListNavigationVerification(
             customerName: input.customerName,
             customerFurigana: input.customerFurigana,
             recordId: input.recordId,
-            recordUrl: finalUrl,
+            recordUrl: cycleResult.recordUrl,
             createAttempted: false,
             createConfirmed: true,
             recordIdentitySource: 'route_only',
             customerIdFromApi: null,
             apiParseNotes: evidence.apiParseNotes,
+            responseDetailLoad: cycleResult.responseDetailLoad,
         };
     } finally {
         servicesCapture.dispose();
@@ -682,15 +816,43 @@ export async function runCirsRecordCreationAndListNavigation(
     const env = options?.env ?? DEFAULT_CIRS_RECORD_ENV;
     const apiUrl = env.createRecordApiUrl ?? CREATE_CUSTOMER_INTERACTION_RECORD_URL;
     let createClicked = false;
+    const tracker = new CirsRecordRunTracker({ accountEmail: options?.accountEmail ?? null });
+    tracker.logStarted(new URL(page.url()).pathname);
 
+    try {
+        return await runCirsRecordCreationAndListNavigationInner(
+            page,
+            options,
+            env,
+            apiUrl,
+            tracker,
+            () => createClicked,
+            (value) => {
+                createClicked = value;
+            }
+        );
+    } catch (error) {
+        tracker.logFailed(error, new URL(page.url()).pathname);
+        throw error;
+    }
+}
+
+async function runCirsRecordCreationAndListNavigationInner(
+    page: Page,
+    options: RunCirsRecordFlowOptions | undefined,
+    env: CirsRecordFlowEnvironment,
+    apiUrl: string,
+    tracker: CirsRecordRunTracker,
+    getCreateClicked: () => boolean,
+    setCreateClicked: (value: boolean) => void
+): Promise<CirsRecordContext> {
     await assertCustomerFlowNotBlocked(page);
-    if (options?.existingCustomer) {
-        /* Caller prepared customer detail; list-shell marker not required. */
-    } else {
-        await assertCustomersListInitReady(page);
+    if (!options?.existingCustomer) {
+        await assertCustomerListReadyForCirs(page);
     }
 
     let customer: OpenCustomerFromPhonebookEvidence;
+    tracker.stepStarted('customer selection');
     if (options?.existingCustomer) {
         customer = options.existingCustomer;
         if (!customer.customerId) {
@@ -703,7 +865,7 @@ export async function runCirsRecordCreationAndListNavigation(
             customer.furigana
         );
     } else {
-        const opened = await openFirstCustomerInDisplayedOrder(page);
+        const opened = await openFirstCustomerFromCustomerList(page);
         if (!opened.customerId) {
             throw new CirsRecordFlowError('First customer open did not yield a customer id.');
         }
@@ -715,6 +877,7 @@ export async function runCirsRecordCreationAndListNavigation(
             opened.furigana
         );
     }
+    tracker.logCustomerSelected(customer.customerId!, customer.name, new URL(page.url()).pathname);
 
     const customerName = customer.name;
     const customerFurigana = customer.furigana;
@@ -749,7 +912,7 @@ export async function runCirsRecordCreationAndListNavigation(
         const mainAfterReload = customersMain(page);
         await assertCustomerDetailsCollapsedForCirs(mainAfterReload);
         const previewSnapshotPromise = servicesCapture.waitForSnapshot({ kind: 'customer_preview' });
-        await assertUniqueInteractionRecordsSection(mainAfterReload);
+        await assertCirsRecordSectionReady(mainAfterReload);
         try {
             await previewSnapshotPromise;
         } catch (error) {
@@ -757,20 +920,20 @@ export async function runCirsRecordCreationAndListNavigation(
         }
 
         const main = customersMain(page);
-        const newRecordButton = main.getByRole('button', {
-            name: NEW_CUSTOMER_SERVICE_BUTTON_NAME,
-            exact: true,
-        });
+        const section = await assertCirsRecordSectionReady(main);
+        const newRecordButton = section.getByTestId(CIRS_TEST_IDS.recordCreate);
         await expect(newRecordButton).toBeVisible({ timeout: ACTION_TIMEOUT_MS });
 
+        tracker.stepStarted('record create');
         const createResponsePromise = page.waitForResponse(
             (res) => isCreateInteractionRecordPost(res, apiUrl),
             { timeout: NAVIGATION_TIMEOUT_MS }
         );
 
         await newRecordButton.click({ timeout: ACTION_TIMEOUT_MS });
-        createClicked = true;
+        setCreateClicked(true);
         evidence.createAttempted = true;
+        tracker.createAttempted = true;
         publishEvidence();
 
         const createResponse = await createResponsePromise;
@@ -806,6 +969,11 @@ export async function runCirsRecordCreationAndListNavigation(
             evidence.apiParseNotes = [...evidence.apiParseNotes, 'record_identity_from_route_only'];
         }
         publishEvidence();
+        tracker.logCreated(recordId, new URL(recordUrl).pathname, {
+            recordIdentitySource: evidence.recordIdentitySource,
+        });
+
+        await assertCirsRecordDetailContainer(page, customerId, recordId);
 
         const customerIdOnRecord = parseCustomerIdFromUrl(recordUrl);
         if (customerIdOnRecord !== customerId) {
@@ -814,20 +982,23 @@ export async function runCirsRecordCreationAndListNavigation(
             );
         }
 
-        evidence.recordUrl = await executeCirsRecordDetailListNavigationCycle(
+        const cycleResult = await executeCirsRecordDetailListNavigationCycle(
             page,
             customerId,
             customerName,
             customerFurigana,
             recordId,
-            servicesCapture
+            servicesCapture,
+            tracker
         );
+        evidence.recordUrl = cycleResult.recordUrl;
 
-        if (!createClicked) {
+        if (!getCreateClicked()) {
             throw new CirsRecordFlowError('Internal error: 新規応対 was not clicked exactly once.');
         }
 
         publishEvidence();
+        tracker.logCompleted(new URL(page.url()).pathname);
 
         return {
             customerId,
@@ -841,6 +1012,7 @@ export async function runCirsRecordCreationAndListNavigation(
                 evidence.recordIdentitySource === 'api_and_route' ? 'api_and_route' : 'route_only',
             customerIdFromApi: evidence.customerIdFromApi,
             apiParseNotes: evidence.apiParseNotes,
+            responseDetailLoad: cycleResult.responseDetailLoad,
         };
     } finally {
         servicesCapture.dispose();

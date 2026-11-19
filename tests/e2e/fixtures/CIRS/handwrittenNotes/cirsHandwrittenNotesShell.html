@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>CIRS Handwritten Notes fixture</title>
+</head>
+<body>
+  <main role="main">
+    <div
+      id="record-detail"
+      data-testid="cirs-record-detail"
+      data-customer-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+      data-customer-service-id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    >
+      <div class="back" data-testid="cirs-record-back" role="button" tabindex="0">back</div>
+      <section data-testid="cirs-handwritten-section" data-load-state="loading">
+        <button type="button" data-testid="cirs-handwritten-create">新規メモ</button>
+        <div id="note-items"></div>
+      </section>
+    </div>
+
+    <div id="editor-panel" data-testid="cirs-handwritten-editor" hidden>
+      <button type="button" data-testid="cirs-record-back">back</button>
+      <div class="handwritten-drawing-toolbar">
+        <button type="button" data-testid="cirs-handwritten-color-black" aria-pressed="true">black</button>
+        <button type="button" data-testid="cirs-handwritten-color-red" aria-pressed="false">red</button>
+        <button type="button" data-testid="cirs-handwritten-color-blue" aria-pressed="false">blue</button>
+        <button type="button" data-testid="cirs-handwritten-background-plain" aria-pressed="false">plain</button>
+        <button type="button" data-testid="cirs-handwritten-background-grid" aria-pressed="false">grid</button>
+        <button type="button" data-testid="cirs-handwritten-background-outline" aria-pressed="false">outline</button>
+        <button type="button" data-testid="cirs-handwritten-eraser" aria-pressed="false" disabled>eraser</button>
+        <button type="button" data-testid="cirs-handwritten-reset" aria-pressed="false">reset</button>
+      </div>
+      <canvas
+        id="handwritten-draw-canvas"
+        data-testid="cirs-handwritten-canvas"
+        width="640"
+        height="480"
+      ></canvas>
+      <div data-testid="cirs-handwritten-last-updated"></div>
+      <button type="button" data-testid="cirs-handwritten-save">保存</button>
+      <button type="button" data-testid="cirs-handwritten-delete">メモ削除</button>
+    </div>
+
+    <div
+      id="delete-dialog"
+      class="ant-modal-root"
+      data-testid="cirs-delete-dialog"
+      data-entity-type="handwritten-note"
+      data-entity-id=""
+      hidden
+    >
+      <div
+        id="delete-dialog-panel"
+        role="dialog"
+        aria-modal="true"
+        hidden
+        style="position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 16px; background: #fff; border: 1px solid #ccc;"
+      >
+        <button type="button" data-testid="cirs-delete-confirm">confirm</button>
+      </div>
+    </div>
+
+    <div
+      id="operation-success"
+      data-testid="operation-success"
+      data-entity-type="handwritten-note"
+      data-operation=""
+      hidden
+      style="position: fixed; top: 12px; right: 12px; padding: 8px 12px; background: #e6f4ea; border: 1px solid #137333;"
+    >success</div>
+  </main>
+  <script>
+    window.__hnFailCreateSave = window.__hnFailCreateSave ?? false;
+    window.__hnFailUpdateSave = window.__hnFailUpdateSave ?? false;
+    window.__hnFailDelete = window.__hnFailDelete ?? false;
+    window.__hnWrongMemoRoute = window.__hnWrongMemoRoute ?? false;
+    window.__hnWrongDeleteEntityId = window.__hnWrongDeleteEntityId ?? false;
+    window.__hnZeroSizeDeleteWrapper = window.__hnZeroSizeDeleteWrapper ?? true;
+    window.__hnSurviveReloadAfterDelete = window.__hnSurviveReloadAfterDelete ?? false;
+    window.__hnListLoadDelayMs = window.__hnListLoadDelayMs ?? 0;
+    window.__hnListLoadStuck = window.__hnListLoadStuck ?? false;
+    window.__hnListLoadError = window.__hnListLoadError ?? false;
+    window.__hnEditorMountDelayMs = window.__hnEditorMountDelayMs ?? 0;
+    window.__hnEditorWrongServiceId = window.__hnEditorWrongServiceId ?? false;
+    window.__hnEditorWrongNoteId = window.__hnEditorWrongNoteId ?? false;
+    window.__hnSeedNoteIds = window.__hnSeedNoteIds ?? null;
+    window.__hnStagingStageLayout = window.__hnStagingStageLayout ?? false;
+    window.__hnKonvaDualCanvasLayout = window.__hnKonvaDualCanvasLayout ?? false;
+    window.__hnFloatingToolbar = window.__hnFloatingToolbar ?? false;
+
+    const CUSTOMER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const RECORD_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const PRE_EXISTING_NOTE_ID = 'note-existing-00000001';
+    const PRE_EXISTING_NOTE_ID_2 = 'note-existing-00000002';
+    const SAVE_MEMO_URL = 'https://api-stg.epose.com/customer_interaction_record/save_memo';
+    const SAVE_MEMO_IMAGE_URL = 'https://api-stg.epose.com/customer_interaction_record/save_memo_image';
+
+    const detail = document.getElementById('record-detail');
+    const section = document.querySelector('[data-testid="cirs-handwritten-section"]');
+    const itemsHost = document.getElementById('note-items');
+    const editor = document.getElementById('editor-panel');
+    let canvas = document.getElementById('handwritten-draw-canvas');
+    const lastUpdated = document.querySelector('[data-testid="cirs-handwritten-last-updated"]');
+    const deleteDialog = document.getElementById('delete-dialog');
+    const deleteDialogPanel = document.getElementById('delete-dialog-panel');
+    const toast = document.getElementById('operation-success');
+
+    function applyKonvaDualCanvasLayoutIfRequested() {
+      if (!window.__hnKonvaDualCanvasLayout) {
+        return;
+      }
+      const stage = document.createElement('div');
+      stage.className = 'interaction-record-stage';
+      stage.setAttribute('data-testid', 'cirs-handwritten-canvas');
+      stage.style.cssText = 'position:relative;width:100%;min-height:480px;';
+      canvas.removeAttribute('data-testid');
+      const konva = document.createElement('div');
+      konva.className = 'konvajs-content';
+      konva.style.cssText = 'position:relative;width:100%;min-height:480px;';
+      const scene = document.createElement('canvas');
+      scene.width = 640;
+      scene.height = 480;
+      scene.style.cssText = 'display:block;width:100%;';
+      const hit = document.createElement('canvas');
+      hit.width = 640;
+      hit.height = 480;
+      hit.style.cssText =
+        'position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:auto;';
+      canvas.parentNode.insertBefore(stage, canvas);
+      konva.appendChild(scene);
+      konva.appendChild(hit);
+      stage.appendChild(konva);
+      canvas.remove();
+      canvas = scene;
+      window.__hnSceneCanvas = scene;
+      window.__hnHitCanvas = hit;
+    }
+
+    applyKonvaDualCanvasLayoutIfRequested();
+
+    let pointerCanvas = window.__hnHitCanvas || canvas;
+    let inkCanvas = window.__hnSceneCanvas || canvas;
+    let ctx = inkCanvas.getContext('2d');
+
+    function applyStagingStageLayoutIfRequested() {
+      if (!window.__hnStagingStageLayout || window.__hnKonvaDualCanvasLayout) {
+        return;
+      }
+      const stage = document.createElement('div');
+      stage.className = 'interaction-record-stage';
+      stage.setAttribute('data-testid', 'cirs-handwritten-canvas');
+      stage.style.position = 'relative';
+      canvas.removeAttribute('data-testid');
+      const overlay = document.createElement('div');
+      overlay.id = 'stage-pointer-overlay';
+      overlay.setAttribute('aria-hidden', 'true');
+      overlay.style.cssText =
+        'position:absolute;left:0;right:0;top:0;height:38%;pointer-events:auto;z-index:2;';
+      canvas.style.cssText = 'position:relative;z-index:1;display:block;width:100%;';
+      canvas.parentNode.insertBefore(stage, canvas);
+      stage.appendChild(overlay);
+      stage.appendChild(canvas);
+    }
+
+    applyStagingStageLayoutIfRequested();
+
+    function findDrawingToolbarContainer(editorEl) {
+      if (!editorEl) {
+        return null;
+      }
+      const black = editorEl.querySelector('[data-testid="cirs-handwritten-color-black"]');
+      const eraser = editorEl.querySelector('[data-testid="cirs-handwritten-eraser"]');
+      if (!(black instanceof HTMLElement) || !(eraser instanceof HTMLElement)) {
+        return null;
+      }
+      let ancestor = black.parentElement;
+      while (ancestor && ancestor !== editorEl) {
+        if (ancestor.contains(eraser)) {
+          return ancestor;
+        }
+        ancestor = ancestor.parentElement;
+      }
+      return null;
+    }
+
+    function applyFloatingToolbarIfRequested() {
+      if (!window.__hnFloatingToolbar) {
+        return;
+      }
+      const toolbar = findDrawingToolbarContainer(editor);
+      const stageHost =
+        document.querySelector('[data-testid="cirs-handwritten-canvas"]') || editor;
+      editor.style.position = 'relative';
+      if (toolbar instanceof HTMLElement && stageHost instanceof HTMLElement) {
+        stageHost.style.position = 'relative';
+        toolbar.style.position = 'absolute';
+        toolbar.style.left = '8px';
+        toolbar.style.top = '8px';
+        toolbar.style.zIndex = '10';
+        toolbar.style.background = '#fff';
+        toolbar.style.padding = '4px';
+        toolbar.style.border = '1px solid #ccc';
+        if (toolbar.parentElement !== stageHost) {
+          stageHost.prepend(toolbar);
+        }
+      }
+    }
+
+    applyFloatingToolbarIfRequested();
+    const colorControls = [
+      'cirs-handwritten-color-black',
+      'cirs-handwritten-color-red',
+      'cirs-handwritten-color-blue',
+    ];
+    const backgroundControls = [
+      'cirs-handwritten-background-plain',
+      'cirs-handwritten-background-grid',
+      'cirs-handwritten-background-outline',
+    ];
+    const strokeColors = {
+      'cirs-handwritten-color-black': '#000000',
+      'cirs-handwritten-color-red': '#e7442b',
+      'cirs-handwritten-color-blue': '#007aff',
+    };
+
+    let strokeRevision = 0;
+    window.__hnStrokeColor = '#000000';
+
+    const storageMetaKey = 'hn-notes-fixture-active-key';
+    function resolveStorageKey() {
+      if (window.__hnStorageKey) {
+        return window.__hnStorageKey;
+      }
+      const persisted = sessionStorage.getItem(storageMetaKey);
+      if (persisted) {
+        window.__hnStorageKey = persisted;
+        return persisted;
+      }
+      const created = window.__hnStorageKey || 'hn-notes-fixture-v1';
+      sessionStorage.setItem(storageMetaKey, created);
+      window.__hnStorageKey = created;
+      return created;
+    }
+    const storageKey = resolveStorageKey();
+
+    function loadNotes() {
+      try {
+        return JSON.parse(sessionStorage.getItem(storageKey) || '[]');
+      } catch {
+        return [];
+      }
+    }
+
+    function saveNotes(notes) {
+      sessionStorage.setItem(storageKey, JSON.stringify(notes));
+    }
+
+    function seedPreExisting() {
+      if (sessionStorage.getItem(storageKey) !== null) {
+        return;
+      }
+      const notes = [];
+      var seedIds = window.__hnSeedNoteIds || [PRE_EXISTING_NOTE_ID, PRE_EXISTING_NOTE_ID_2];
+      seedIds.forEach(function (seedId) {
+        notes.push({
+          noteId: seedId,
+          customerServiceId: RECORD_ID,
+          strokeRevision: seedId === PRE_EXISTING_NOTE_ID ? 3 : 1,
+          canvasSnapshot: '',
+          lastUpdated: '2026-10-01T00:00:00.000Z',
+        });
+      });
+      saveNotes(notes);
+    }
+
+    function captureCanvasSnapshot() {
+      return inkCanvas.toDataURL('image/png');
+    }
+
+    function fixtureDrawableMetrics(canvasWidth, canvasHeight) {
+      const margin = Math.max(4, Math.min(canvasWidth, canvasHeight) * 0.04);
+      const editorEl = document.getElementById('editor-panel');
+      const toolbar = editorEl ? findDrawingToolbarContainer(editorEl) : null;
+      let topInset = 0;
+      if (toolbar instanceof HTMLElement && inkCanvas instanceof HTMLCanvasElement) {
+        const rect = inkCanvas.getBoundingClientRect();
+        const toolbarRect = toolbar.getBoundingClientRect();
+        const overlaps =
+          toolbarRect.right > rect.left &&
+          toolbarRect.left < rect.right &&
+          toolbarRect.bottom > rect.top;
+        if (overlaps) {
+          topInset = Math.max(0, toolbarRect.bottom - rect.top + 4);
+        }
+      }
+      const originY = Math.max(margin, topInset + margin);
+      return {
+        originX: margin,
+        originY: originY,
+        width: Math.max(canvasWidth - margin * 2, 1),
+        height: Math.max(canvasHeight - originY - margin, 1),
+      };
+    }
+
+    function seedExistingNoteBlackHorizontal() {
+      const w = inkCanvas.width;
+      const h = inkCanvas.height;
+      const drawable = fixtureDrawableMetrics(w, h);
+      const rowY = drawable.originY + drawable.height * 0.1;
+      const x0 = drawable.originX + drawable.width * 0.06;
+      const x1 = x0 + drawable.width * 0.22;
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = 6;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x0, rowY);
+      ctx.lineTo(x1, rowY);
+      ctx.stroke();
+      strokeRevision += 1;
+    }
+
+    function restoreCanvasSnapshot(dataUrl) {
+      if (!dataUrl) {
+        ctx.clearRect(0, 0, inkCanvas.width, inkCanvas.height);
+        return Promise.resolve();
+      }
+      return new Promise(function (resolve) {
+        const img = new Image();
+        img.onload = function () {
+          ctx.clearRect(0, 0, inkCanvas.width, inkCanvas.height);
+          ctx.drawImage(img, 0, 0);
+          resolve();
+        };
+        img.src = dataUrl;
+      });
+    }
+
+    function showSuccessToast(operation, entityId) {
+      toast.setAttribute('data-operation', operation);
+      toast.setAttribute('data-entity-type', 'handwritten-note');
+      if (entityId) {
+        toast.setAttribute('data-entity-id', entityId);
+      } else {
+        toast.removeAttribute('data-entity-id');
+      }
+      toast.textContent = 'success:' + operation;
+      toast.hidden = false;
+    }
+
+    function hideSuccessToast() {
+      toast.hidden = true;
+      toast.setAttribute('data-operation', '');
+    }
+
+    function setListLoadState(state) {
+      section.setAttribute('data-load-state', state);
+    }
+
+    function finishListRender() {
+      if (window.__hnListLoadError) {
+        setListLoadState('error');
+        return;
+      }
+      if (window.__hnListLoadStuck) {
+        setListLoadState('loading');
+        return;
+      }
+      setListLoadState('loaded');
+    }
+
+    let renderItemsTimer = null;
+
+    function renderItems() {
+      if (renderItemsTimer) {
+        window.clearTimeout(renderItemsTimer);
+        renderItemsTimer = null;
+      }
+      setListLoadState('loading');
+      itemsHost.innerHTML = '';
+      const notes = loadNotes();
+      const delayMs = Number(window.__hnListLoadDelayMs) || 0;
+      renderItemsTimer = window.setTimeout(function () {
+        renderItemsTimer = null;
+        notes.forEach(function (note) {
+          const item = document.createElement('button');
+          item.type = 'button';
+          item.setAttribute('data-testid', 'cirs-handwritten-item');
+          item.setAttribute('data-note-id', note.noteId);
+          item.setAttribute('data-customer-service-id', note.customerServiceId);
+          item.textContent = note.noteId;
+          item.addEventListener('click', function () {
+            void openEditor(note.noteId);
+          });
+          itemsHost.appendChild(item);
+        });
+        finishListRender();
+      }, delayMs);
+    }
+
+    function setEditorIdentity(noteId) {
+      editor.setAttribute('data-note-id', noteId || '');
+      editor.removeAttribute('data-customer-service-id');
+      if (noteId && window.__hnEditorWrongServiceId) {
+        editor.setAttribute('data-customer-service-id', 'cccccccc-cccc-4ccc-8ccc-cccccccccccc');
+      }
+      if (noteId && window.__hnEditorWrongNoteId) {
+        editor.setAttribute('data-note-id', 'wrong-note-id-on-editor');
+      }
+    }
+
+    async function openEditor(noteId) {
+      detail.hidden = true;
+      editor.hidden = false;
+      setEditorIdentity(noteId);
+      const note = loadNotes().find(function (n) { return n.noteId === noteId; });
+      strokeRevision = note ? note.strokeRevision : 0;
+      await restoreCanvasSnapshot(note ? note.canvasSnapshot : '');
+      if (note && !note.canvasSnapshot) {
+        seedExistingNoteBlackHorizontal();
+      }
+      lastUpdated.textContent = note && note.lastUpdated ? '最終更新 : ' + note.lastUpdated : '';
+      window.history.pushState({}, '', '/customers/' + CUSTOMER_ID + '/interaction-records/' + RECORD_ID + '/memo/' + noteId);
+    }
+
+    function mountCreateEditorPanel() {
+      editor.setAttribute('data-testid', 'cirs-handwritten-editor');
+      editor.hidden = false;
+      setEditorIdentity('');
+      strokeRevision = 0;
+      ctx.clearRect(0, 0, inkCanvas.width, inkCanvas.height);
+      lastUpdated.textContent = '';
+    }
+
+    function openCreateEditor() {
+      detail.hidden = true;
+      editor.hidden = true;
+      var mountDelayMs = Number(window.__hnEditorMountDelayMs) || 0;
+      if (mountDelayMs > 0) {
+        editor.removeAttribute('data-testid');
+      }
+      var routeCustomerId = window.__hnWrongMemoRoute ? 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' : CUSTOMER_ID;
+      var routeRecordId = window.__hnWrongMemoRoute ? 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' : RECORD_ID;
+      window.history.pushState(
+        {},
+        '',
+        '/customers/' + routeCustomerId + '/interaction-records/' + routeRecordId + '/memo/new'
+      );
+      if (mountDelayMs > 0) {
+        window.setTimeout(mountCreateEditorPanel, mountDelayMs);
+      } else {
+        mountCreateEditorPanel();
+      }
+    }
+
+    function returnToDetail() {
+      editor.hidden = true;
+      detail.hidden = false;
+      window.history.pushState({}, '', '/customers/' + CUSTOMER_ID + '/interaction-records/' + RECORD_ID);
+      renderItems();
+      window.setTimeout(hideSuccessToast, 5000);
+    }
+
+    function setExclusivePressed(groupTestIds, activeTestId) {
+      groupTestIds.forEach(function (id) {
+        const el = document.querySelector('[data-testid="' + id + '"]');
+        if (el) {
+          el.setAttribute('aria-pressed', id === activeTestId ? 'true' : 'false');
+        }
+      });
+    }
+
+    colorControls.forEach(function (id) {
+      document.querySelector('[data-testid="' + id + '"]').addEventListener('click', function () {
+        window.__hnStrokeColor = strokeColors[id] || '#000';
+        setExclusivePressed(colorControls, id);
+      });
+    });
+
+    backgroundControls.forEach(function (id) {
+      document.querySelector('[data-testid="' + id + '"]').addEventListener('click', function () {
+        setExclusivePressed(backgroundControls, id);
+      });
+    });
+
+    function mapPointerEventToInk(event) {
+      const rect = inkCanvas.getBoundingClientRect();
+      return {
+        x: ((event.clientX - rect.left) / rect.width) * inkCanvas.width,
+        y: ((event.clientY - rect.top) / rect.height) * inkCanvas.height,
+      };
+    }
+
+    let strokeDrawingActive = false;
+
+    function finishPointerStroke() {
+      if (!strokeDrawingActive) {
+        return;
+      }
+      strokeDrawingActive = false;
+      ctx.stroke();
+      strokeRevision += 1;
+    }
+
+    pointerCanvas.addEventListener('mousedown', function (event) {
+      strokeDrawingActive = true;
+      const point = mapPointerEventToInk(event);
+      ctx.strokeStyle = window.__hnStrokeColor || '#000';
+      ctx.lineWidth = 6;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(point.x, point.y);
+    });
+
+    pointerCanvas.addEventListener('mousemove', function (event) {
+      if (!strokeDrawingActive) {
+        return;
+      }
+      const point = mapPointerEventToInk(event);
+      ctx.lineTo(point.x, point.y);
+    });
+
+    pointerCanvas.addEventListener('mouseup', finishPointerStroke);
+    pointerCanvas.addEventListener('mouseleave', finishPointerStroke);
+
+    document.querySelector('[data-testid="cirs-handwritten-create"]').addEventListener('click', openCreateEditor);
+
+    function returnToDetailAfterCreateSave() {
+      editor.hidden = true;
+      detail.hidden = false;
+      editor.removeAttribute('data-note-id');
+      editor.removeAttribute('data-customer-service-id');
+      window.history.pushState({}, '', '/customers/' + CUSTOMER_ID + '/interaction-records/' + RECORD_ID);
+      renderItems();
+    }
+
+    document.querySelector('[data-testid="cirs-handwritten-save"]').addEventListener('click', function () {
+      void (async function () {
+        const noteId = editor.getAttribute('data-note-id') || '';
+        const isCreate = !noteId;
+        if (isCreate && window.__hnFailCreateSave) return;
+        if (!isCreate && window.__hnFailUpdateSave) return;
+        const now = new Date().toISOString();
+        const notes = loadNotes();
+        if (isCreate) {
+          returnToDetailAfterCreateSave();
+          const saveMemoResponse = await fetch(SAVE_MEMO_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ customerServiceId: RECORD_ID }),
+          });
+          if (!saveMemoResponse.ok) return;
+          const saveMemoBody = await saveMemoResponse.json();
+          await fetch(SAVE_MEMO_IMAGE_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ customerServiceId: RECORD_ID, id: saveMemoBody.id }),
+          });
+          notes.push({
+            noteId: saveMemoBody.id,
+            customerServiceId: RECORD_ID,
+            strokeRevision: strokeRevision,
+            canvasSnapshot: captureCanvasSnapshot(),
+            lastUpdated: now,
+          });
+          saveNotes(notes);
+          renderItems();
+          showSuccessToast('create', saveMemoBody.id);
+          window.setTimeout(hideSuccessToast, 5000);
+          return;
+        }
+        const idx = notes.findIndex(function (n) { return n.noteId === noteId; });
+        if (idx >= 0) {
+          notes[idx].strokeRevision = strokeRevision;
+          notes[idx].canvasSnapshot = captureCanvasSnapshot();
+          notes[idx].lastUpdated = now;
+          saveNotes(notes);
+        }
+        showSuccessToast('update', noteId);
+        returnToDetail();
+      })();
+    });
+
+    function openDeleteDialog(noteId) {
+      deleteDialog.setAttribute(
+        'data-entity-id',
+        window.__hnWrongDeleteEntityId ? 'wrong-note-id' : noteId
+      );
+      deleteDialog.hidden = false;
+      if (window.__hnZeroSizeDeleteWrapper !== false) {
+        deleteDialog.style.width = '0px';
+        deleteDialog.style.height = '0px';
+        deleteDialog.style.overflow = 'visible';
+        deleteDialog.style.position = 'fixed';
+      } else {
+        deleteDialog.style.width = '';
+        deleteDialog.style.height = '';
+        deleteDialog.style.overflow = '';
+        deleteDialog.style.position = '';
+      }
+      deleteDialogPanel.hidden = false;
+    }
+
+    function closeDeleteDialog() {
+      deleteDialog.hidden = true;
+      deleteDialogPanel.hidden = true;
+    }
+
+    document.querySelector('[data-testid="cirs-handwritten-delete"]').addEventListener('click', function () {
+      const noteId = editor.getAttribute('data-note-id') || '';
+      openDeleteDialog(noteId);
+    });
+
+    document.querySelector('[data-testid="cirs-delete-confirm"]').addEventListener('click', function () {
+      if (window.__hnFailDelete) return;
+      const entityId = deleteDialog.getAttribute('data-entity-id');
+      const noteId = editor.getAttribute('data-note-id') || '';
+      if (entityId !== noteId) return;
+      let notes = loadNotes().filter(function (n) { return n.noteId !== noteId; });
+      if (window.__hnSurviveReloadAfterDelete) {
+        sessionStorage.setItem(storageKey + '-resurrect', JSON.stringify(loadNotes()));
+      }
+      saveNotes(notes);
+      closeDeleteDialog();
+      showSuccessToast('delete', noteId);
+      returnToDetail();
+    });
+
+    document.querySelectorAll('[data-testid="cirs-record-back"]').forEach(function (btn) {
+      btn.addEventListener('click', returnToDetail);
+    });
+
+    seedPreExisting();
+    renderItems();
+    window.history.replaceState({}, '', '/customers/' + CUSTOMER_ID + '/interaction-records/' + RECORD_ID);
+    window.addEventListener('pageshow', function () {
+      if (window.__hnSurviveReloadAfterDelete) {
+        const resurrect = sessionStorage.getItem(storageKey + '-resurrect');
+        if (resurrect) {
+          sessionStorage.setItem(storageKey, resurrect);
+        }
+      }
+      renderItems();
+    });
+  </script>
+</body>
+</html>

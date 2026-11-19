@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>CIRS Posture Analysis fixture</title>
+  <style>
+    [hidden] { display: none !important; }
+    #customer-list-panel, #report-panel { padding: 1rem; }
+    #analysis-full-list-page:not([hidden]) { display: block !important; min-height: 24px; }
+    #analysis-report-root:not([hidden]) { display: block !important; min-height: 24px; }
+    [data-testid="analysis-report-history-list"] { min-height: 12px; }
+  </style>
+</head>
+<body>
+  <main role="main">
+    <div
+      id="record-detail"
+      data-testid="cirs-record-detail"
+      data-customer-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+      data-customer-service-id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    >
+      <section data-testid="cirs-analysis-section">
+        <button type="button" data-testid="cirs-analysis-create">新規分析</button>
+        <button type="button" data-testid="cirs-analysis-list-open">一覧</button>
+        <div data-testid="cirs-analysis-loading" hidden>loading</div>
+        <div id="analysis-preview-items"></div>
+      </section>
+    </div>
+
+    <div id="customer-list-panel" hidden>
+      <div data-testid="customer-list">
+        <div data-testid="customer-list-loading" hidden></div>
+        <div
+          data-testid="customer-row"
+          data-customer-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        >
+          <span data-testid="customer-name">Fixture Customer</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="customer-detail-panel" hidden>
+      <h3>Fixture Customer</h3>
+      <p data-testid="customer-furigana">フィクスチャー</p>
+      <button type="button">顧客情報を表示</button>
+      <section data-testid="cirs-record-section">
+        <div data-testid="cirs-record-loading" hidden></div>
+        <div
+          data-testid="cirs-record-row"
+          data-customer-service-id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        >
+          <span>2026/01/01</span>
+        </div>
+      </section>
+    </div>
+
+    <!-- Full-list page (trace 20261102-074838): history list + dual history-loading nodes. -->
+    <div id="analysis-full-list-page" hidden>
+      <button type="button" data-testid="cirs-analysis-back">back</button>
+      <div id="analysis-list-panel" data-testid="analysis-report-history-list">
+        <div class="ant-spin-nested-loading" data-testid="analysis-report-history-loading">
+          <div class="ant-spin-container">
+            <div
+              id="history-active-spinner"
+              class="ant-spin ant-spin-spinning"
+              data-testid="analysis-report-history-loading"
+            >
+              <span class="ant-spin-dot ant-spin-dot-spin"></span>
+            </div>
+          </div>
+        </div>
+        <div id="analysis-list-items"></div>
+      </div>
+      <p data-testid="cirs-analysis-empty" hidden>empty</p>
+    </div>
+
+    <div
+      id="analysis-report-root"
+      data-testid="analysis-report"
+      data-analysis-id=""
+      data-customer-id=""
+      hidden
+    >
+      <div data-testid="analysis-report-summary"></div>
+      <div data-testid="analysis-report-score"></div>
+      <div data-testid="analysis-report-photo" hidden>
+        <img alt="" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" width="1" height="1" />
+      </div>
+    </div>
+
+    <div
+      id="limit-dialog"
+      role="dialog"
+      aria-modal="true"
+      data-testid="plan-limit-dialog"
+      hidden
+    >
+      <p>2週間のトライアルは終了いたしました。</p>
+      <p>フリープラン</p>
+      <button type="button" data-testid="plan-limit-close">閉じる</button>
+    </div>
+  </main>
+  <script>
+    window.__paListMode = window.__paListMode ?? 'populated';
+    window.__paStuckListLoading = window.__paStuckListLoading ?? false;
+    window.__paWrongCustomerOnFirstItem = window.__paWrongCustomerOnFirstItem ?? false;
+    window.__paDropPreviewAfterReopen = window.__paDropPreviewAfterReopen ?? false;
+    window.__paDelayedListItems = window.__paDelayedListItems ?? false;
+    window.__paWrongListItemCustomerId = window.__paWrongListItemCustomerId ?? false;
+    window.__paWrongListRouteCustomerId = window.__paWrongListRouteCustomerId ?? false;
+    window.__paWrongBackCustomerId = window.__paWrongBackCustomerId ?? false;
+    window.__paWrongReportCustomerId = window.__paWrongReportCustomerId ?? false;
+    window.__paWrongReportAnalysisId = window.__paWrongReportAnalysisId ?? false;
+    window.__paReportShellOnly = window.__paReportShellOnly ?? false;
+    const CUSTOMER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const WRONG_CUSTOMER_ID = '99999999-9999-4999-8999-999999999999';
+    const RECORD_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const ANALYSIS_A = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+    const ANALYSIS_B = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+
+    const recordDetail = document.getElementById('record-detail');
+    const analysisSection = document.querySelector('[data-testid="cirs-analysis-section"]');
+    const previewHost = document.getElementById('analysis-preview-items');
+    const fullListPage = document.getElementById('analysis-full-list-page');
+    const listPanel = document.getElementById('analysis-list-panel');
+    const listHost = document.getElementById('analysis-list-items');
+    const historyActiveSpinner = document.getElementById('history-active-spinner');
+    const listEmpty = fullListPage.querySelector('[data-testid="cirs-analysis-empty"]');
+    const customerListPanel = document.getElementById('customer-list-panel');
+    const customerDetailPanel = document.getElementById('customer-detail-panel');
+    const reportPanel = document.getElementById('analysis-report-root');
+    const limitDialog = document.getElementById('limit-dialog');
+    function seedReports() {
+      const ids =
+        window.__paListMode === 'empty'
+          ? []
+          : [ANALYSIS_A, ANALYSIS_B];
+      return ids;
+    }
+
+    function renderPreviewItems(ids) {
+      previewHost.innerHTML = '';
+      ids.forEach((id, index) => {
+        const customerAttr =
+          window.__paWrongCustomerOnFirstItem && index === 0
+            ? 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+            : CUSTOMER_ID;
+        const el = document.createElement('div');
+        el.setAttribute('data-testid', 'cirs-analysis-item');
+        el.setAttribute('data-analysis-id', id);
+        el.setAttribute('data-customer-id', customerAttr);
+        el.textContent = `report-${id.slice(0, 8)}`;
+        el.style.cursor = 'pointer';
+        el.addEventListener('click', () => openReport(id));
+        previewHost.appendChild(el);
+      });
+    }
+
+    function renderListItems(ids) {
+      listHost.innerHTML = '';
+      ids.forEach((id) => {
+        const el = document.createElement('div');
+        el.setAttribute('data-testid', 'cirs-analysis-item');
+        el.setAttribute('data-analysis-id', id);
+        el.setAttribute(
+          'data-customer-id',
+          window.__paWrongListItemCustomerId ? WRONG_CUSTOMER_ID : CUSTOMER_ID
+        );
+        el.textContent = `list-${id.slice(0, 8)}`;
+        listHost.appendChild(el);
+      });
+    }
+
+    function showLimitDialog() {
+      limitDialog.hidden = false;
+    }
+
+    function hideLimitDialog() {
+      limitDialog.hidden = true;
+    }
+
+    function showRecordView() {
+      recordDetail.hidden = false;
+      fullListPage.hidden = true;
+      customerListPanel.hidden = true;
+      customerDetailPanel.hidden = true;
+      reportPanel.hidden = true;
+    }
+
+    function revealPanel(panel) {
+      if (!panel) return;
+      panel.hidden = false;
+      panel.removeAttribute('hidden');
+    }
+
+    function hidePanel(panel) {
+      if (!panel) return;
+      panel.hidden = true;
+    }
+
+    function showFullListView() {
+      hidePanel(recordDetail);
+      hidePanel(customerListPanel);
+      hidePanel(customerDetailPanel);
+      hidePanel(reportPanel);
+      revealPanel(fullListPage);
+      revealPanel(listPanel);
+    }
+
+    function showSelectedCustomerAfterAnalysisBack() {
+      hidePanel(recordDetail);
+      hidePanel(fullListPage);
+      hidePanel(reportPanel);
+      revealPanel(customerListPanel);
+      revealPanel(customerDetailPanel);
+    }
+
+    function showCustomerDetailForReopen() {
+      customerListPanel.hidden = true;
+      customerDetailPanel.hidden = false;
+      recordDetail.hidden = true;
+      fullListPage.hidden = true;
+      reportPanel.hidden = true;
+    }
+
+    function populateReportPanel(analysisId) {
+      const reportRoot = reportPanel;
+      const summary = reportPanel.querySelector('[data-testid="analysis-report-summary"]');
+      const score = reportPanel.querySelector('[data-testid="analysis-report-score"]');
+      const photo = reportPanel.querySelector('[data-testid="analysis-report-photo"]');
+      const domAnalysisId = window.__paWrongReportAnalysisId ? ANALYSIS_B : analysisId;
+      const domCustomerId = window.__paWrongReportCustomerId ? WRONG_CUSTOMER_ID : CUSTOMER_ID;
+      reportRoot.setAttribute('data-analysis-id', domAnalysisId);
+      reportRoot.setAttribute('data-customer-id', domCustomerId);
+      if (window.__paReportShellOnly) {
+        summary.hidden = false;
+        summary.removeAttribute('hidden');
+        summary.textContent = 'Report shell (score not loaded)';
+        score.textContent = '—';
+        score.hidden = false;
+        score.removeAttribute('hidden');
+        photo.hidden = true;
+        return;
+      }
+      summary.hidden = false;
+      summary.textContent = 'Fixture posture summary';
+      score.textContent = String(40 + (analysisId.charCodeAt(0) % 15));
+      photo.hidden = false;
+    }
+
+    function openReport(analysisId) {
+      populateReportPanel(analysisId);
+      hidePanel(recordDetail);
+      hidePanel(fullListPage);
+      hidePanel(customerListPanel);
+      hidePanel(customerDetailPanel);
+      revealPanel(reportPanel);
+      const path = `/customers/${CUSTOMER_ID}/reports/${analysisId}`;
+      history.pushState({}, '', path);
+    }
+
+    function setHistoryListActivelyLoading(active) {
+      if (!historyActiveSpinner) return;
+      if (active) {
+        historyActiveSpinner.classList.add('ant-spin-spinning');
+        historyActiveSpinner.hidden = false;
+      } else {
+        historyActiveSpinner.classList.remove('ant-spin-spinning');
+      }
+    }
+
+    function finishListLoad(ids) {
+      if (window.__paStuckListLoading) {
+        return;
+      }
+      setHistoryListActivelyLoading(false);
+      if (ids.length === 0) {
+        listEmpty.hidden = false;
+        return;
+      }
+      listEmpty.hidden = true;
+      if (window.__paDelayedListItems) {
+        setTimeout(() => renderListItems(ids), 250);
+      } else {
+        renderListItems(ids);
+      }
+    }
+
+    analysisSection.querySelector('[data-testid="cirs-analysis-create"]').addEventListener('click', showLimitDialog);
+    limitDialog.querySelector('[data-testid="plan-limit-close"]').addEventListener('click', hideLimitDialog);
+
+    analysisSection.querySelector('[data-testid="cirs-analysis-list-open"]').addEventListener('click', () => {
+      showFullListView();
+      setHistoryListActivelyLoading(true);
+      listEmpty.hidden = true;
+      listHost.innerHTML = '';
+      const routeCustomer = window.__paWrongListRouteCustomerId ? WRONG_CUSTOMER_ID : CUSTOMER_ID;
+      history.pushState({}, '', `/customers/${routeCustomer}/posture-analysis-report`);
+      const ids = seedReports();
+      setTimeout(() => finishListLoad(ids), 30);
+    });
+
+    fullListPage.querySelector('[data-testid="cirs-analysis-back"]').addEventListener('click', () => {
+      showSelectedCustomerAfterAnalysisBack();
+      const backCustomer = window.__paWrongBackCustomerId ? WRONG_CUSTOMER_ID : CUSTOMER_ID;
+      history.pushState({}, '', `/customers/${backCustomer}`);
+    });
+
+    customerListPanel.querySelector('[data-testid="customer-row"]').addEventListener('click', () => {
+      showCustomerDetailForReopen();
+      history.pushState({}, '', `/customers/${CUSTOMER_ID}`);
+    });
+
+    customerDetailPanel.querySelector('[data-testid="cirs-record-row"]').addEventListener('click', () => {
+      showRecordView();
+      history.pushState({}, '', `/customers/${CUSTOMER_ID}/interaction-records/${RECORD_ID}`);
+      const previewIds = window.__paDropPreviewAfterReopen ? [] : seedReports();
+      renderPreviewItems(previewIds);
+    });
+
+    const initialPreview = seedReports();
+    renderPreviewItems(initialPreview);
+    showRecordView();
+    history.replaceState({}, '', `/customers/${CUSTOMER_ID}/interaction-records/${RECORD_ID}`);
+  </script>
+</body>
+</html>

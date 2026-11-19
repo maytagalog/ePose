@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>Analysis Report Share Email fixture</title>
+  <style>
+    [hidden]{display:none!important}
+    #share-email-dialog-root .ant-modal-wrap { position:fixed; inset:0; z-index:1000; }
+    #share-email-dialog-root .ant-modal { position:relative; width:min(420px,92vw); margin:80px auto; background:#fff; min-height:120px; box-shadow:0 4px 12px rgba(0,0,0,.15); }
+    #share-email-dialog-root.arv-share-email-root-no-box { position:fixed; left:0; top:0; width:0; height:0; overflow:visible; }
+  </style>
+</head>
+<body>
+  <article
+    id="report-root"
+    data-testid="analysis-report"
+    data-load-state="ready"
+    data-customer-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    data-analysis-id="cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+  >
+    <button type="button" id="actions-toggle" data-testid="analysis-report-actions-toggle" aria-expanded="false">actions</button>
+    <div id="actions-menu" data-testid="analysis-report-actions-menu" data-report-view="single" hidden>
+      <div data-testid="analysis-report-share-email-open" role="presentation">メールで送信</div>
+    </div>
+  </article>
+
+  <div id="share-email-dialog-root" data-testid="analysis-report-share-email-dialog" data-report-view="single" hidden>
+    <div class="ant-modal-wrap">
+      <div class="ant-modal" role="dialog" aria-modal="true">
+        <h2>姿勢分析レポートをメールで共有する</h2>
+        <div id="customer-email-recipient-block"></div>
+        <button type="button" data-testid="analysis-report-share-email-submit">送信する</button>
+        <button type="button" data-testid="analysis-report-share-email-cancel">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="share-email-success" data-testid="analysis-report-share-email-success" hidden>送信に成功しました</div>
+
+  <script>
+    window.__arvShareEmailRecipient = window.__arvShareEmailRecipient ?? 'fixture-recipient@example.com';
+    window.__arvShareEmailRecipientBlockHtml = window.__arvShareEmailRecipientBlockHtml ?? null;
+    window.__arvShareEmailFailsOpen = window.__arvShareEmailFailsOpen ?? false;
+    window.__arvShareEmailSuppressSuccessToast = window.__arvShareEmailSuppressSuccessToast ?? false;
+    window.__arvShareEmailSendAttempted = false;
+    const reportRoot = document.getElementById('report-root');
+    const actionsToggle = document.getElementById('actions-toggle');
+    const actionsMenu = document.getElementById('actions-menu');
+    const emailRoot = document.getElementById('share-email-dialog-root');
+    const emailRecipientBlock = document.getElementById('customer-email-recipient-block');
+    const submitBtn = emailRoot.querySelector('[data-testid="analysis-report-share-email-submit"]');
+    const cancelBtn = emailRoot.querySelector('[data-testid="analysis-report-share-email-cancel"]');
+
+    function renderRecipientBlock() {
+      if (window.__arvShareEmailRecipientBlockHtml) {
+        emailRecipientBlock.innerHTML = window.__arvShareEmailRecipientBlockHtml;
+        return;
+      }
+      const recipient = String(window.__arvShareEmailRecipient);
+      emailRecipientBlock.innerHTML = 'メールアドレス<br><br>' + recipient;
+    }
+    renderRecipientBlock();
+    emailRoot.setAttribute('data-analysis-id', reportRoot.getAttribute('data-analysis-id'));
+
+    actionsToggle.addEventListener('click', () => {
+      const open = actionsMenu.hidden;
+      actionsMenu.hidden = !open;
+      actionsToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+
+    document.querySelector('[data-testid="analysis-report-share-email-open"]').addEventListener('click', () => {
+      actionsMenu.hidden = true;
+      actionsToggle.setAttribute('aria-expanded', 'false');
+      if (window.__arvShareEmailFailsOpen) return;
+      emailRoot.hidden = false;
+      emailRoot.classList.add('arv-share-email-root-no-box');
+    });
+
+    const successToast = document.getElementById('share-email-success');
+    submitBtn.addEventListener('click', () => {
+      window.__arvShareEmailSendAttempted = true;
+      emailRoot.hidden = true;
+      if (!window.__arvShareEmailSuppressSuccessToast && successToast) {
+        successToast.hidden = false;
+      }
+      fetch('https://api-stg.epose.com/report/share_report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customer_id: reportRoot.getAttribute('data-customer-id'), analysis_id: reportRoot.getAttribute('data-analysis-id') }),
+      }).catch(() => {});
+    });
+    cancelBtn.addEventListener('click', () => { emailRoot.hidden = true; });
+  </script>
+</body>
+</html>

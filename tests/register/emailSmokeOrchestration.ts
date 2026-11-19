@@ -1,19 +1,27 @@
 import os from 'node:os';
+import { preflightGmailApiReadAccess } from '../../utils/gmail';
 import {
     acquireExclusiveLock,
-    buildEmail,
+    buildRegistrationEmail,
     clearPendingSelectedOnly,
     commitEmailConsumed,
     createRunId,
     lockFilePath,
+    migrateRegistrationEmailStateIfNeeded,
     persistApplicationSubmitPending,
     persistOtpSubmitted,
     persistPendingSelected,
     readEmailState,
     releaseExclusiveLock,
-    resolveDotPosition,
+    resolveRegistrationAllocation,
     stateFilePath,
+    type RegistrationAllocationPool,
 } from './emailState';
+import {
+    applicationSubmitNotBeforeEpochMs,
+    assertRecoverableApplicationSubmitPending,
+    verifyRegistrationResumeOtpInbox,
+} from './registrationEmailRecovery';
 
 export const AUTH_VERIFICATION_REJECTED_MESSAGE =
     'Email verification rejected (認証に失敗しました). Smoke failed; pending preserved for reconciliation.';
@@ -24,9 +32,16 @@ export type SmokeSessionContext = {
     lockPath: string;
     localBase: string;
     domain: string;
+    allocationPool: RegistrationAllocationPool;
     dotPosition: number;
+    threeDotIndex: number | null;
     email: string;
     markApplicationSubmitPendingCrossed: () => void;
+    /** Resume Gmail OTP flow without re-submitting application (pending application_submit_pending). */
+    resumedAfterApplicationSubmit?: boolean;
+    applicationSubmitNotBeforeEpochMs?: number;
+    /** From Gmail OTP precheck when resuming application_submit_pending. */
+    registrationResumeVerificationUrl?: string;
 };
 
 export type SmokeSessionParams = {
@@ -138,50 +153,115 @@ export async function runSmokeEmailStateSession(
         lockHeld = true;
         disposeEmergencyLockRelease = registerEmergencyLockRelease(lockPath, runId);
 
-        const state = readEmailState(statePath, localBase, domain);
-        const selection = resolveDotPosition(
-            state,
-            manualDotPositionRaw,
-            localBase.length
-        );
-        const dotPosition = selection.dotPosition;
-        const email = buildEmail(localBase, domain, dotPosition);
-
-        persistPendingSelected(
+        const migration = migrateRegistrationEmailStateIfNeeded(
             statePath,
             localBase,
             domain,
-            dotPosition,
-            email,
-            runId
+            { repoRoot }
         );
+        if (migration.migrated) {
+            console.log(
+                `Registration email state migrated v${migration.fromVersion}→v${migration.toVersion} (backup: ${migration.backupRelativePath ?? 'none'}, pool: ${migration.allocationPool})`
+            );
+        }
 
-        console.log(
-            `Smoke email position: ${dotPosition} (${selection.source})`
-        );
-        console.log(`Using test email: ${email}`);
+        await preflightGmailApiReadAccess();
 
-        try {
-            await runBody({
+        const stateWithPending = readEmailState(statePath, localBase, domain, {
+            allowUnresolvedPending: true,
+        });
+        const recoverablePending = stateWithPending.pendingVerification
+            ? (() => {
+                  try {
+                      return assertRecoverableApplicationSubmitPending(stateWithPending);
+                  } catch {
+                      return null;
+                  }
+              })()
+            : null;
+
+        let sessionCtx: SmokeSessionContext;
+
+        if (recoverablePending) {
+            const resumeOtpEvidence = await verifyRegistrationResumeOtpInbox(recoverablePending);
+            crossedApplicationSubmitPending = true;
+            const dotPosition =
+                recoverablePending.allocationPool === 'three_dot'
+                    ? recoverablePending.threeDotIndex!
+                    : recoverablePending.dotPosition!;
+            console.log(
+                `Resuming registration pending (phase=${recoverablePending.phase}, runId=${recoverablePending.runId})`
+            );
+            console.log(`Using test email: ${recoverablePending.email}`);
+            sessionCtx = {
+                runId: recoverablePending.runId,
+                statePath,
+                lockPath,
+                localBase,
+                domain,
+                allocationPool: recoverablePending.allocationPool,
+                dotPosition,
+                threeDotIndex:
+                    recoverablePending.allocationPool === 'three_dot'
+                        ? recoverablePending.threeDotIndex ?? null
+                        : null,
+                email: recoverablePending.email,
+                resumedAfterApplicationSubmit: true,
+                applicationSubmitNotBeforeEpochMs:
+                    applicationSubmitNotBeforeEpochMs(recoverablePending),
+                registrationResumeVerificationUrl: resumeOtpEvidence.verificationUrl,
+                markApplicationSubmitPendingCrossed: () => {
+                    crossedApplicationSubmitPending = true;
+                },
+            };
+        } else {
+            const state = readEmailState(statePath, localBase, domain);
+            const manualThreeDotIndexRaw = process.env.EPOSE_THREE_DOT_INDEX;
+            const selection = resolveRegistrationAllocation(
+                state,
+                manualDotPositionRaw,
+                manualThreeDotIndexRaw,
+                localBase.length
+            );
+            const dotPosition =
+                selection.pool === 'single_dot' ? selection.dotPosition : selection.threeDotIndex;
+            const email = buildRegistrationEmail(
+                localBase,
+                domain,
+                selection.pool,
+                dotPosition
+            );
+
+            persistPendingSelected(statePath, localBase, domain, selection, email, runId);
+
+            console.log(
+                selection.pool === 'single_dot'
+                    ? `Smoke email position: ${selection.dotPosition} (${selection.source})`
+                    : `Smoke three-dot index: ${selection.threeDotIndex} gaps (${selection.threeDotGaps.join(',')}) (${selection.source})`
+            );
+            console.log(`Using test email: ${email}`);
+
+            sessionCtx = {
                 runId,
                 statePath,
                 lockPath,
                 localBase,
                 domain,
+                allocationPool: selection.pool,
                 dotPosition,
+                threeDotIndex: selection.pool === 'three_dot' ? selection.threeDotIndex : null,
                 email,
                 markApplicationSubmitPendingCrossed: () => {
                     crossedApplicationSubmitPending = true;
                 },
-            });
+            };
+        }
+
+        try {
+            await runBody(sessionCtx);
         } catch (err) {
             if (!crossedApplicationSubmitPending) {
-                clearPendingSelectedOnly(
-                    statePath,
-                    localBase,
-                    domain,
-                    runId
-                );
+                clearPendingSelectedOnly(statePath, localBase, domain, sessionCtx.runId);
             }
             throw err;
         }
@@ -209,11 +289,19 @@ export type VerificationBoundaryActions = {
 /**
  * Shared ordering for application submit, OTP submit, 本登録 observation, and consumption commit.
  */
+export type ExecuteVerificationBoundariesOptions = {
+    /** Skip initial application send when pending is already application_submit_pending. */
+    resumeAfterApplicationSubmit?: boolean;
+};
+
 export async function executeVerificationBoundaries(
-    actions: VerificationBoundaryActions
+    actions: VerificationBoundaryActions,
+    options?: ExecuteVerificationBoundariesOptions
 ): Promise<void> {
-    actions.persistApplicationSubmitPending();
-    await actions.clickInitialApplicationSend();
+    if (!options?.resumeAfterApplicationSubmit) {
+        actions.persistApplicationSubmitPending();
+        await actions.clickInitialApplicationSend();
+    }
 
     await actions.prepareOtpVerification();
 

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>Fixture Report</title>
+  <style>
+    .hide-on-print { display: block; }
+    .show-on-print { display: none; }
+    @media print {
+      .hide-on-print { display: none !important; }
+      .show-on-print { display: block !important; }
+    }
+    [data-testid="analysis-report-print-hidden"] { position: absolute; left: -9999px; }
+  </style>
+</head>
+<body>
+  <div id="root">
+    <div data-testid="analysis-report"
+         data-customer-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+         data-analysis-id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+         data-load-state="ready">
+      <div data-testid="analysis-report-header" style="display: block;">
+        <div data-testid="analysis-report-header-field" data-field="name">Fixture Customer</div>
+        <div data-testid="analysis-report-header-field" data-field="height" data-value="170">170 cm</div>
+        <div data-testid="analysis-report-header-field" data-field="age" data-value="30">30</div>
+        <div data-testid="analysis-report-header-field" data-field="sex" data-value="male">Male</div>
+        <div data-testid="analysis-report-header-field" data-field="measuredAt" data-value="2026-01-15T08:00:00.000Z">2026/01/15</div>
+      </div>
+      <div data-testid="analysis-report-summary" class="hide-on-print">
+        Summary AI判定 スコア visible
+      </div>
+      <div data-testid="analysis-report-score" class="hide-on-print">77</div>
+      <div class="print-wrapper show-on-print">Print wrapper AI判定 スコア 77 2026/01/15</div>
+      <img alt="pose" width="40" height="40" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" />
+    </div>
+    <button type="button" data-testid="analysis-report-actions-toggle" id="actions-toggle">⋯</button>
+    <div data-testid="analysis-report-actions-menu" data-report-view="single" id="actions-menu" hidden>
+      <button type="button" data-testid="analysis-report-print" id="print-visible">印刷</button>
+      <button type="button" data-testid="analysis-report-print" class="show-on-print" id="print-hidden">印刷 hidden duplicate</button>
+    </div>
+  </div>
+  <script>
+    const JA_PRINT_TITLE = '姿勢分析レポート';
+    const EN_PRINT_TITLE = 'PoseAnalysisReport';
+    const toggle = document.getElementById('actions-toggle');
+    const menu = document.getElementById('actions-menu');
+    const printBtn = document.getElementById('print-visible');
+    toggle.addEventListener('click', () => {
+      menu.hidden = !menu.hidden;
+    });
+    printBtn.addEventListener('click', () => {
+      const originalTitle = document.title;
+      const lang = (document.documentElement.lang || 'ja').toLowerCase();
+      const wrong = Boolean(window.__eposePdfFixtureWrongPrintTitle);
+      const printTitle = wrong
+        ? 'WrongPrintTitleFixture'
+        : lang.startsWith('en')
+          ? EN_PRINT_TITLE
+          : JA_PRINT_TITLE;
+      document.title = printTitle;
+      window.setTimeout(() => {
+        window.print();
+        document.title = originalTitle;
+        menu.hidden = true;
+      }, 200);
+    });
+  </script>
+</body>
+</html>

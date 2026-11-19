@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <title>Shared report scroll fixture</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        height: 100vh;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+      .hide-on-print {
+        padding: 1rem 1.25rem;
+      }
+      .layout-page-title {
+        border-bottom: 1px solid #ddd;
+        background: #fafafa;
+        font-weight: 600;
+      }
+      #customer-header {
+        border-bottom: 1px solid #eee;
+        font-size: 1.25rem;
+        font-weight: 600;
+      }
+      #scroll-root {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 1rem 1.25rem 3rem;
+      }
+      .section {
+        min-height: 70vh;
+        padding: 1rem 0;
+        border-bottom: 1px solid #eee;
+      }
+      .show-on-print {
+        display: none;
+      }
+      #bottom-sentinel {
+        height: 2rem;
+        margin-top: 1rem;
+        text-align: center;
+        color: #666;
+      }
+      #unrelated-decoy-scroll {
+        position: fixed;
+        left: 0;
+        top: 0;
+        width: 140px;
+        height: 100vh;
+        overflow-y: auto;
+        background: #fee;
+        border-right: 2px solid #c00;
+        z-index: 10;
+        font-size: 11px;
+      }
+      #unrelated-decoy-scroll .decoy-block {
+        min-height: 120vh;
+        padding: 0.5rem;
+        border-bottom: 1px solid #daa;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="hide-on-print layout-page-title" id="standing-title">立位姿勢分析</div>
+    <div class="hide-on-print" id="customer-header">
+      <span id="customer-name"></span>
+    </div>
+    <div id="scroll-root">
+      <div class="section" id="report-summary">
+        <div>AI判定</div>
+        <div class="summary-metric">スコア</div>
+        <div class="summary-metric">世代別評価</div>
+      </div>
+    </div>
+    <div class="show-on-print" id="print-duplicate" aria-hidden="true">
+      <div>立位姿勢分析</div>
+      <div id="print-customer-name"></div>
+      <div>AI判定</div>
+      <div>スコア</div>
+      <div>世代別評価</div>
+    </div>
+    <script>
+      (function () {
+        const cfg = window.__sharedReportScrollFixture || {};
+        const customerName = cfg.customerName || 'Fixture Customer';
+        const mode = cfg.scrollMode || 'normal';
+        const sectionCount = Number(cfg.sectionCount) || 8;
+        const decoyScrollPanel = !!cfg.decoyScrollPanel;
+
+        document.getElementById('customer-name').textContent = customerName;
+        document.getElementById('print-customer-name').textContent = customerName;
+        const root = document.getElementById('scroll-root');
+        for (let i = 1; i < sectionCount; i += 1) {
+          const section = document.createElement('div');
+          section.className = 'section';
+          section.textContent = 'Fixture section ' + i;
+          root.appendChild(section);
+        }
+
+        const sentinel = document.createElement('div');
+        sentinel.id = 'bottom-sentinel';
+        sentinel.textContent = 'Fixture report bottom';
+        root.appendChild(sentinel);
+
+        if (mode === 'growing') {
+          let grew = false;
+          root.addEventListener('scroll', function () {
+            if (grew || root.scrollTop < root.clientHeight) {
+              return;
+            }
+            grew = true;
+            for (let j = 0; j < 4; j += 1) {
+              const late = document.createElement('div');
+              late.className = 'section';
+              late.textContent = 'Late-loaded section ' + j;
+              root.insertBefore(late, sentinel);
+            }
+          });
+        }
+
+        if (mode === 'stalled') {
+          root.addEventListener('scroll', function () {
+            if (root.scrollTop > 120) {
+              root.scrollTop = 120;
+            }
+          });
+        }
+
+        if (decoyScrollPanel) {
+          const decoy = document.createElement('div');
+          decoy.id = 'unrelated-decoy-scroll';
+          decoy.setAttribute('aria-label', 'unrelated decoy scroll panel');
+          for (let d = 0; d < 24; d += 1) {
+            const block = document.createElement('div');
+            block.className = 'decoy-block';
+            block.textContent = 'Unrelated decoy block ' + d;
+            decoy.appendChild(block);
+          }
+          document.body.appendChild(decoy);
+        }
+
+        const params = new URLSearchParams(window.location.search);
+        const token = params.get('token') || 'fixture-token';
+        fetch('https://api-stg.epose.com/report/fetch_shared_report?token=' + encodeURIComponent(token));
+      })();
+    </script>
+  </body>
+</html>

@@ -106,7 +106,17 @@ export const DEFAULT_THREE_MONTH_PLAN_SELECTION: PlanSelectionCapture = {
     monthDuration: THREE_MONTH_PLAN_DURATION,
 };
 
-export type PlanPurchaseFlowOptions = CompanyInformationFlowOptions;
+export type PlanPurchaseFeatureTimingHooks = {
+    /** After payment complete UI, before contract persistence verification. */
+    onPlanPurchaseCoreComplete?: () => void;
+    onContractPersistenceEntered?: () => void;
+    /** After contract verification, before payment history verification. */
+    onContractPersistenceComplete?: () => void;
+    onPaymentHistoryEntered?: () => void;
+    onPaymentHistoryComplete?: () => void;
+};
+
+export type PlanPurchaseFlowOptions = CompanyInformationFlowOptions & PlanPurchaseFeatureTimingHooks;
 
 export class PlanPurchaseFlowError extends Error {
     constructor(message: string) {
@@ -2075,6 +2085,8 @@ export async function runPlanPurchaseAndVerify(
         });
 
         await test.step('plan purchase: contract information', async () => {
+            options?.onPlanPurchaseCoreComplete?.();
+            options?.onContractPersistenceEntered?.();
             const subscriptionBodyAfterPurchase =
                 await returnToContractInformationAndCaptureSubscription(page);
             await verifyContractAfterPurchase(
@@ -2089,7 +2101,10 @@ export async function runPlanPurchaseAndVerify(
             );
         });
 
+        options?.onContractPersistenceComplete?.();
+
         const historyEntry = await test.step('plan purchase: payment history → Contract Information', async () => {
+            options?.onPaymentHistoryEntered?.();
             const entry = await verifyPaymentHistoryForPurchase(
                 page,
                 selection,
@@ -2100,6 +2115,8 @@ export async function runPlanPurchaseAndVerify(
             await assertContractInformationReady(page);
             return entry;
         });
+
+        options?.onPaymentHistoryComplete?.();
 
         console.log(
             'PLAN_PURCHASE_PERSISTED',

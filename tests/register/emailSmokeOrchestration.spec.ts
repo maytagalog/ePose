@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { buildThreeDotEmailFromIndex } from './emailStateThreeDotPool';
 import {
     DEFAULT_DOMAIN,
     DEFAULT_LOCAL_BASE,
@@ -9,7 +10,7 @@ import {
     buildEmail,
     lockFilePath,
     persistApplicationSubmitPending,
-    persistPendingSelected,
+    persistPendingSelectedAtDotPosition,
     readEmailState,
     releaseExclusiveLock,
     setWriteEmailStateAtomicOverride,
@@ -17,6 +18,12 @@ import {
     writeEmailStateAtomic,
     type EmailState,
 } from './emailState';
+import {
+    GmailAuthError,
+    setGmailClientOverride,
+    setGmailPreflightOverride,
+} from '../../utils/gmail';
+import { REGISTRATION_RESUME_ABORT_PREFIX } from './registrationEmailRecovery';
 import {
     AUTH_VERIFICATION_REJECTED_MESSAGE,
     executeVerificationBoundaries,
@@ -26,7 +33,10 @@ import {
 
 function makeBaseState(overrides: Partial<EmailState> = {}): EmailState {
     return {
-        schemaVersion: 2,
+        schemaVersion: 3,
+        allocationPool: 'single_dot',
+        nextThreeDotIndex: 0,
+        threeDotHighWaterMark: 0,
         localBase: DEFAULT_LOCAL_BASE,
         domain: DEFAULT_DOMAIN,
         nextDotPosition: 0,
@@ -43,6 +53,87 @@ function initDir(): string {
 test.describe('email smoke orchestration', () => {
     test.afterEach(() => {
         setWriteEmailStateAtomicOverride(null);
+        setGmailPreflightOverride(null);
+    });
+
+    test('Gmail preflight failure leaves email state unchanged', async () => {
+        const dir = initDir();
+        const statePath = stateFilePath(dir);
+        writeEmailStateAtomic(statePath, makeBaseState());
+        const before = fs.readFileSync(statePath, 'utf8');
+
+        setGmailPreflightOverride(() =>
+            Promise.reject(
+                new GmailAuthError(
+                    'Gmail OAuth token refresh failed (invalid_grant). Reauthorize the test mailbox token.json before send.'
+                )
+            )
+        );
+
+        await expect(
+            runSmokeEmailStateSession({
+                repoRoot: dir,
+                localBase: DEFAULT_LOCAL_BASE,
+                domain: DEFAULT_DOMAIN,
+                manualDotPositionRaw: undefined,
+                runBody: async () => {
+                    throw new Error('runBody must not run when Gmail preflight fails');
+                },
+            })
+        ).rejects.toThrow(/invalid_grant/);
+
+        expect(fs.readFileSync(statePath, 'utf8')).toBe(before);
+        expect(fs.existsSync(lockFilePath(dir))).toBe(false);
+    });
+
+    test('resume OTP precheck failure leaves blocking pending unchanged', async () => {
+        const dir = initDir();
+        const statePath = stateFilePath(dir);
+        const applicationSubmitAttemptedAt = '2026-11-17T09:10:15.892Z';
+        writeEmailStateAtomic(statePath, {
+            ...makeBaseState({
+                allocationPool: 'three_dot',
+                nextDotPosition: 30,
+                highWaterMark: 30,
+                nextThreeDotIndex: 4,
+                threeDotHighWaterMark: 4,
+                pendingVerification: {
+                    allocationPool: 'three_dot',
+                    threeDotIndex: 4,
+                    threeDotGaps: [1, 2, 7],
+                    email: buildThreeDotEmailFromIndex(DEFAULT_LOCAL_BASE, DEFAULT_DOMAIN, 4),
+                    phase: 'application_submit_pending',
+                    runId: 'pending-run-1',
+                    hostname: 'host',
+                    pid: 1,
+                    startedAt: applicationSubmitAttemptedAt,
+                    applicationSubmitAttemptedAt,
+                },
+            }),
+        });
+        const beforeRaw = fs.readFileSync(statePath, 'utf8');
+
+        setGmailPreflightOverride(async () => {});
+        setGmailClientOverride({
+            listMessages: async () => [],
+            getMessage: async () => {
+                throw new Error('unexpected getMessage');
+            },
+        });
+
+        await expect(
+            runSmokeEmailStateSession({
+                repoRoot: dir,
+                localBase: DEFAULT_LOCAL_BASE,
+                domain: DEFAULT_DOMAIN,
+                manualDotPositionRaw: undefined,
+                runBody: async () => {
+                    throw new Error('runBody must not run when resume OTP precheck fails');
+                },
+            })
+        ).rejects.toThrow(new RegExp(REGISTRATION_RESUME_ABORT_PREFIX));
+
+        expect(fs.readFileSync(statePath, 'utf8')).toBe(beforeRaw);
     });
 
     test('failure before application boundary clears selected only', async () => {
@@ -78,7 +169,7 @@ test.describe('email smoke orchestration', () => {
         writeEmailStateAtomic(statePath, makeBaseState());
 
         const runId = 'run-fail-app';
-        persistPendingSelected(
+        persistPendingSelectedAtDotPosition(
             statePath,
             DEFAULT_LOCAL_BASE,
             DEFAULT_DOMAIN,
@@ -131,7 +222,7 @@ test.describe('email smoke orchestration', () => {
 
         const runId = 'run-crash-after-app';
         const email = buildEmail(DEFAULT_LOCAL_BASE, DEFAULT_DOMAIN, 0);
-        persistPendingSelected(
+        persistPendingSelectedAtDotPosition(
             statePath,
             DEFAULT_LOCAL_BASE,
             DEFAULT_DOMAIN,
@@ -157,7 +248,7 @@ test.describe('email smoke orchestration', () => {
         writeEmailStateAtomic(statePath, makeBaseState());
 
         const runId = 'run-otp-write-fail';
-        persistPendingSelected(
+        persistPendingSelectedAtDotPosition(
             statePath,
             DEFAULT_LOCAL_BASE,
             DEFAULT_DOMAIN,
@@ -217,7 +308,7 @@ test.describe('email smoke orchestration', () => {
         writeEmailStateAtomic(statePath, makeBaseState());
 
         const runId = 'run-auth-timeout';
-        persistPendingSelected(
+        persistPendingSelectedAtDotPosition(
             statePath,
             DEFAULT_LOCAL_BASE,
             DEFAULT_DOMAIN,
@@ -290,7 +381,7 @@ test.describe('email smoke orchestration', () => {
             './emailState'
         );
 
-        persistPendingSelected(
+        persistPendingSelectedAtDotPosition(
             statePath,
             DEFAULT_LOCAL_BASE,
             DEFAULT_DOMAIN,
@@ -356,7 +447,7 @@ test.describe('email smoke orchestration', () => {
             './emailState'
         );
 
-        persistPendingSelected(
+        persistPendingSelectedAtDotPosition(
             statePath,
             DEFAULT_LOCAL_BASE,
             DEFAULT_DOMAIN,

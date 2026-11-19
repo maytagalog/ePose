@@ -17,7 +17,7 @@ import {
  * Set display-name env vars to match the customer row on staging before running live.
  */
 const CONTINUATION_CUSTOMER_ID = 'ce3f36fd-07c3-4eda-ad87-35631acc39cc';
-const CONTINUATION_RECORD_ID = 'f11b84fe-d4aa-4bc3-8cfa-90a566c158cb';
+const CONTINUATION_RECORD_ID = 'd4f16394-6f31-4001-badc-30fe9a79d925';
 
 function resolveContinuationCustomerDisplay(): { name: string; furigana: string } {
     const name = process.env.CIRS_VERIFICATION_CUSTOMER_NAME?.trim() ?? '';

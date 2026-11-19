@@ -1,13 +1,27 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import {
+    assertThreeDotIndexAvailable,
+    buildThreeDotEmailFromIndex,
+    threeDotGapsAtIndex,
+    threeDotPoolSize,
+    type ThreeDotGaps,
+} from './emailStateThreeDotPool';
+import {
+    copyRegistrationEmailStateBackup,
+    ensureEmailArtifactDirs,
+} from './emailStateStoragePaths';
 
-export const SUPPORTED_SCHEMA_VERSION = 2;
+export const SUPPORTED_SCHEMA_VERSION = 3;
+export const LEGACY_SCHEMA_VERSION = 2;
 export const E2E_EMAIL_STATE_FILENAME = 'e2e-email-state.json';
 export const E2E_EMAIL_LOCK_FILENAME = 'e2e-email.lock';
 
 export const DEFAULT_LOCAL_BASE = 'aardvarkomonstrosesquip1230000';
 export const DEFAULT_DOMAIN = 'gmail.com';
+
+export type RegistrationAllocationPool = 'single_dot' | 'three_dot';
 
 export type PendingPhase =
     | 'selected'
@@ -15,7 +29,10 @@ export type PendingPhase =
     | 'otp_submitted';
 
 export type PendingVerification = {
-    dotPosition: number;
+    allocationPool: RegistrationAllocationPool;
+    dotPosition?: number;
+    threeDotIndex?: number;
+    threeDotGaps?: ThreeDotGaps;
     email: string;
     phase: PendingPhase;
     runId: string;
@@ -32,6 +49,9 @@ export type EmailState = {
     domain: string;
     nextDotPosition: number;
     highWaterMark: number;
+    allocationPool: RegistrationAllocationPool;
+    nextThreeDotIndex: number;
+    threeDotHighWaterMark: number;
     pendingVerification: PendingVerification | null;
 };
 
@@ -100,6 +120,49 @@ function assertCounterInRange(value: unknown, label: string, localBaseLength: nu
     return value;
 }
 
+function assertThreeDotCounterInRange(
+    value: unknown,
+    label: string,
+    localBaseLength: number
+): number {
+    const poolSize = threeDotPoolSize(localBaseLength);
+    if (typeof value !== 'number' || !Number.isInteger(value)) {
+        throw new Error(`Invalid email-state file: ${label} must be an integer`);
+    }
+    if (value < 0 || value > poolSize) {
+        throw new Error(
+            `Invalid email-state file: ${label} ${value} out of range (0 to ${poolSize})`
+        );
+    }
+    return value;
+}
+
+function normalizeAllocationPool(value: unknown, legacySingleDotExhausted: boolean): RegistrationAllocationPool {
+    if (value === 'three_dot') {
+        return 'three_dot';
+    }
+    if (value === 'single_dot' || value === undefined) {
+        return legacySingleDotExhausted ? 'three_dot' : 'single_dot';
+    }
+    throw new Error(`Invalid email-state file: allocationPool must be single_dot or three_dot (got ${String(value)})`);
+}
+
+export function buildRegistrationEmail(
+    localBase: string,
+    domain: string,
+    pool: RegistrationAllocationPool,
+    index: number
+): string {
+    if (pool === 'single_dot') {
+        return buildEmail(localBase, domain, index);
+    }
+    return buildThreeDotEmailFromIndex(localBase, domain, index);
+}
+
+export function isSingleDotPoolExhausted(state: Pick<EmailState, 'nextDotPosition'>, localBaseLength: number): boolean {
+    return state.nextDotPosition >= localBaseLength;
+}
+
 export function validatePendingRecord(
     pending: unknown,
     localBase: string,
@@ -112,20 +175,63 @@ export function validatePendingRecord(
     }
 
     const p = pending as Record<string, unknown>;
-    const dotPosition = p.dotPosition;
-    if (
-        typeof dotPosition !== 'number' ||
-        !Number.isInteger(dotPosition) ||
-        dotPosition < 0 ||
-        dotPosition > localBase.length - 1
-    ) {
-        throw new Error(
-            'Invalid email-state file: pendingVerification.dotPosition must be an integer from 0 to 29'
-        );
+    const allocationPool =
+        p.allocationPool === 'three_dot'
+            ? 'three_dot'
+            : 'single_dot';
+
+    let dotPosition: number | undefined;
+    let threeDotIndex: number | undefined;
+    let threeDotGaps: ThreeDotGaps | undefined;
+
+    if (allocationPool === 'single_dot') {
+        const rawDot = p.dotPosition;
+        if (
+            typeof rawDot !== 'number' ||
+            !Number.isInteger(rawDot) ||
+            rawDot < 0 ||
+            rawDot > localBase.length - 1
+        ) {
+            throw new Error(
+                `Invalid email-state file: pendingVerification.dotPosition must be an integer from 0 to ${localBase.length - 1}`
+            );
+        }
+        dotPosition = rawDot;
+    } else {
+        const rawIndex = p.threeDotIndex;
+        const poolSize = threeDotPoolSize(localBase.length);
+        if (
+            typeof rawIndex !== 'number' ||
+            !Number.isInteger(rawIndex) ||
+            rawIndex < 0 ||
+            rawIndex >= poolSize
+        ) {
+            throw new Error(
+                `Invalid email-state file: pendingVerification.threeDotIndex must be an integer from 0 to ${poolSize > 0 ? poolSize - 1 : 0}`
+            );
+        }
+        threeDotIndex = rawIndex;
+        threeDotGaps = threeDotGapsAtIndex(localBase.length, rawIndex);
+        const rawGaps = p.threeDotGaps;
+        if (Array.isArray(rawGaps) && rawGaps.length === 3) {
+            const gapTuple = rawGaps as number[];
+            if (
+                gapTuple[0] !== threeDotGaps[0] ||
+                gapTuple[1] !== threeDotGaps[1] ||
+                gapTuple[2] !== threeDotGaps[2]
+            ) {
+                throw new Error(
+                    'Invalid email-state file: pendingVerification.threeDotGaps does not match threeDotIndex'
+                );
+            }
+        }
     }
 
     const email = p.email;
-    const expectedEmail = buildEmail(localBase, domain, dotPosition);
+    const expectedEmail =
+        allocationPool === 'single_dot'
+            ? buildEmail(localBase, domain, dotPosition!)
+            : buildThreeDotEmailFromIndex(localBase, domain, threeDotIndex!);
     if (typeof email !== 'string' || email !== expectedEmail) {
         throw new Error(
             `Invalid email-state file: pendingVerification.email must be ${expectedEmail}`
@@ -230,7 +336,10 @@ export function validatePendingRecord(
     }
 
     return {
+        allocationPool,
         dotPosition,
+        threeDotIndex,
+        threeDotGaps,
         email,
         phase,
         runId,
@@ -295,7 +404,7 @@ function readEmailStateFileContents(
 
     if (obj.schemaVersion === undefined) {
         throw new Error(
-            'Invalid email-state file: missing schemaVersion (expected 2)'
+            `Invalid email-state file: missing schemaVersion (expected ${SUPPORTED_SCHEMA_VERSION})`
         );
     }
     if (obj.schemaVersion === 1) {
@@ -303,11 +412,12 @@ function readEmailStateFileContents(
             'Unsupported schemaVersion 1. Create schemaVersion 2 manually: set highWaterMark equal to nextDotPosition, pendingVerification null, using historical usage to choose the starting counter.'
         );
     }
-    if (obj.schemaVersion !== SUPPORTED_SCHEMA_VERSION) {
+    if (obj.schemaVersion !== SUPPORTED_SCHEMA_VERSION && obj.schemaVersion !== LEGACY_SCHEMA_VERSION) {
         throw new Error(
-            `Invalid email-state file: unsupported schemaVersion ${obj.schemaVersion} (supported: ${SUPPORTED_SCHEMA_VERSION})`
+            `Invalid email-state file: unsupported schemaVersion ${obj.schemaVersion} (supported: ${LEGACY_SCHEMA_VERSION}, ${SUPPORTED_SCHEMA_VERSION})`
         );
     }
+    const fileSchemaVersion = obj.schemaVersion as number;
 
     if (typeof obj.localBase !== 'string' || obj.localBase !== localBase) {
         throw new Error(
@@ -365,13 +475,125 @@ function readEmailStateFileContents(
         );
     }
 
+    const legacySingleDotExhausted = nextDotPosition >= localBase.length;
+    let allocationPool: RegistrationAllocationPool;
+    let nextThreeDotIndex: number;
+    let threeDotHighWaterMark: number;
+
+    if (fileSchemaVersion === LEGACY_SCHEMA_VERSION) {
+        allocationPool = pendingVerification
+            ? pendingVerification.allocationPool
+            : legacySingleDotExhausted
+              ? 'three_dot'
+              : 'single_dot';
+        nextThreeDotIndex = 0;
+        threeDotHighWaterMark = 0;
+    } else {
+        allocationPool = normalizeAllocationPool(obj.allocationPool, legacySingleDotExhausted);
+        if (pendingVerification?.allocationPool === 'single_dot') {
+            allocationPool = 'single_dot';
+        }
+        nextThreeDotIndex = assertThreeDotCounterInRange(
+            obj.nextThreeDotIndex ?? 0,
+            'nextThreeDotIndex',
+            localBase.length
+        );
+        threeDotHighWaterMark = assertThreeDotCounterInRange(
+            obj.threeDotHighWaterMark ?? 0,
+            'threeDotHighWaterMark',
+            localBase.length
+        );
+        if (nextThreeDotIndex < threeDotHighWaterMark) {
+            throw new Error(
+                `Invalid email-state file: nextThreeDotIndex (${nextThreeDotIndex}) is less than threeDotHighWaterMark (${threeDotHighWaterMark}).`
+            );
+        }
+        if (allocationPool === 'single_dot' && !legacySingleDotExhausted && nextThreeDotIndex > 0) {
+            throw new Error(
+                'Invalid email-state file: nextThreeDotIndex cannot advance while single_dot pool is not exhausted'
+            );
+        }
+    }
+
     return {
         schemaVersion: SUPPORTED_SCHEMA_VERSION,
         localBase: obj.localBase,
         domain: obj.domain,
         nextDotPosition,
         highWaterMark,
+        allocationPool,
+        nextThreeDotIndex,
+        threeDotHighWaterMark,
         pendingVerification,
+    };
+}
+
+export type RegistrationEmailStateMigrationResult = {
+    migrated: boolean;
+    fromVersion: number;
+    toVersion: number;
+    backupRelativePath: string | null;
+    allocationPool: RegistrationAllocationPool;
+};
+
+export function migrateRegistrationEmailStateIfNeeded(
+    statePath: string,
+    localBase: string,
+    domain: string,
+    options?: { repoRoot?: string }
+): RegistrationEmailStateMigrationResult {
+    const raw = fs.readFileSync(statePath, 'utf8').trim();
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const fromVersion = Number(parsed.schemaVersion);
+    if (fromVersion === SUPPORTED_SCHEMA_VERSION) {
+        const state = readEmailStateFileContents(statePath, localBase, domain, {
+            allowUnresolvedPending: true,
+        });
+        return {
+            migrated: false,
+            fromVersion,
+            toVersion: SUPPORTED_SCHEMA_VERSION,
+            backupRelativePath: null,
+            allocationPool: state.allocationPool,
+        };
+    }
+    if (fromVersion !== LEGACY_SCHEMA_VERSION) {
+        throw new Error(
+            `Cannot migrate registration email state: unsupported schemaVersion ${fromVersion}`
+        );
+    }
+
+    const repoRoot = options?.repoRoot ?? path.dirname(statePath);
+    ensureEmailArtifactDirs(repoRoot);
+    const timestampLabel = new Date().toISOString().replace(/[:.]/g, '-');
+    const backup = copyRegistrationEmailStateBackup(repoRoot, timestampLabel);
+
+    const state = readEmailStateFileContents(statePath, localBase, domain, {
+        allowUnresolvedPending: true,
+    });
+    const legacyExhausted = isSingleDotPoolExhausted(state, localBase.length);
+    const allocationPool: RegistrationAllocationPool = state.pendingVerification
+        ? state.pendingVerification.allocationPool
+        : legacyExhausted
+          ? 'three_dot'
+          : 'single_dot';
+
+    const migrated: EmailState = {
+        ...state,
+        schemaVersion: SUPPORTED_SCHEMA_VERSION,
+        allocationPool,
+        nextThreeDotIndex: allocationPool === 'three_dot' ? state.nextThreeDotIndex : 0,
+        threeDotHighWaterMark: allocationPool === 'three_dot' ? state.threeDotHighWaterMark : 0,
+    };
+
+    writeEmailStateAtomic(statePath, migrated);
+
+    return {
+        migrated: true,
+        fromVersion,
+        toVersion: SUPPORTED_SCHEMA_VERSION,
+        backupRelativePath: backup.relativePath,
+        allocationPool: migrated.allocationPool,
     };
 }
 
@@ -406,6 +628,12 @@ function writeEmailStateAtomicDefault(
     if (state.nextDotPosition < state.highWaterMark) {
         throw new Error(
             'Internal error: nextDotPosition cannot be less than highWaterMark on write'
+        );
+    }
+
+    if (state.nextThreeDotIndex < state.threeDotHighWaterMark) {
+        throw new Error(
+            'Internal error: nextThreeDotIndex cannot be less than threeDotHighWaterMark on write'
         );
     }
 
@@ -468,7 +696,7 @@ export function acquireExclusiveLock(
                 : '';
         if (code === 'EEXIST') {
             throw new Error(
-                `Cannot acquire ${E2E_EMAIL_LOCK_FILENAME} (exclusive). Another smoke run may be active, or a stale lock remains. Confirm no other fullE2ESmoke run is in progress on this machine. Inspect e2e-email-state.json pendingVerification and reconcile with staging/Gmail. If the lock is stale, remove ${E2E_EMAIL_LOCK_FILENAME} manually only after reconciliation.`
+                `Cannot acquire ${E2E_EMAIL_LOCK_FILENAME} (exclusive). Another smoke run may be active, or a stale lock remains. Confirm no other fullE2ESmoke run is in progress on this machine. Inspect e2e-email-state.json pendingVerification and reconcile with staging/Gmail; record outcomes under test-state/email/reconciliation and state backups under test-state/email/backups. If the lock is stale, remove ${E2E_EMAIL_LOCK_FILENAME} manually only after reconciliation.`
             );
         }
         throw new Error(`Cannot acquire ${E2E_EMAIL_LOCK_FILENAME}: ${err}`);
@@ -580,28 +808,176 @@ export type DotSelection = {
     source: 'manual' | 'persistent';
 };
 
+export type RegistrationAllocationSelection =
+    | {
+          pool: 'single_dot';
+          dotPosition: number;
+          source: 'manual' | 'persistent';
+      }
+    | {
+          pool: 'three_dot';
+          threeDotIndex: number;
+          threeDotGaps: ThreeDotGaps;
+          source: 'manual' | 'persistent';
+      };
+
+const MANUAL_THREE_DOT_INDEX_PATTERN = /^(0|[1-9]\d*)$/;
+
+export function parseManualThreeDotIndex(raw: string, localBaseLength: number): number {
+    if (raw.length === 0 || raw.trim().length === 0) {
+        throw new Error(
+            `EPOSE_THREE_DOT_INDEX must be a whole number from 0 to ${threeDotPoolSize(localBaseLength) - 1}. Got empty value`
+        );
+    }
+    if (raw !== raw.trim() || !MANUAL_THREE_DOT_INDEX_PATTERN.test(raw)) {
+        throw new Error(
+            `EPOSE_THREE_DOT_INDEX must be a decimal integer with no signs or whitespace. Got: ${raw}`
+        );
+    }
+    const n = Number(raw);
+    const max = threeDotPoolSize(localBaseLength) - 1;
+    if (!Number.isInteger(n) || n < 0 || n > max) {
+        throw new Error(
+            `EPOSE_THREE_DOT_INDEX must be a whole number from 0 to ${max}. Got: ${raw}`
+        );
+    }
+    return n;
+}
+
+export function assertManualThreeDotOverrideAllowed(
+    manualIndex: number,
+    savedNextThreeDotIndex: number
+): void {
+    if (manualIndex < savedNextThreeDotIndex) {
+        throw new Error(
+            `EPOSE_THREE_DOT_INDEX=${manualIndex} is behind saved nextThreeDotIndex=${savedNextThreeDotIndex}. ` +
+                'Do not lower threeDotHighWaterMark to bypass this check.'
+        );
+    }
+    if (manualIndex > savedNextThreeDotIndex) {
+        console.warn(
+            `Manual three-dot index ${manualIndex} is ahead of saved nextThreeDotIndex=${savedNextThreeDotIndex}. ` +
+                `If verification completes, state will advance to at least ${manualIndex + 1}.`
+        );
+    }
+}
+
+export function resolveRegistrationAllocation(
+    state: EmailState,
+    manualDotPositionRaw: string | undefined,
+    manualThreeDotIndexRaw: string | undefined,
+    localBaseLength: number
+): RegistrationAllocationSelection {
+    const pool =
+        state.pendingVerification?.allocationPool ??
+        (isSingleDotPoolExhausted(state, localBaseLength) ? 'three_dot' : state.allocationPool);
+
+    if (pool === 'single_dot') {
+        if (manualThreeDotIndexRaw !== undefined) {
+            throw new Error(
+                'EPOSE_THREE_DOT_INDEX is set but registration pool is still single_dot (single-dot slots remain or pending single_dot verification must be reconciled first).'
+            );
+        }
+        if (manualDotPositionRaw !== undefined) {
+            const dotPosition = parseManualDotPosition(manualDotPositionRaw, localBaseLength);
+            assertManualOverrideAllowed(dotPosition, state.nextDotPosition);
+            return { pool: 'single_dot', dotPosition, source: 'manual' };
+        }
+        assertPositionAvailable(state.nextDotPosition, localBaseLength);
+        return { pool: 'single_dot', dotPosition: state.nextDotPosition, source: 'persistent' };
+    }
+
+    if (manualDotPositionRaw !== undefined) {
+        throw new Error(
+            'EPOSE_DOT_POSITION is not valid once the single-dot registration pool is exhausted; use EPOSE_THREE_DOT_INDEX instead.'
+        );
+    }
+
+    if (manualThreeDotIndexRaw !== undefined) {
+        const threeDotIndex = parseManualThreeDotIndex(manualThreeDotIndexRaw, localBaseLength);
+        assertManualThreeDotOverrideAllowed(threeDotIndex, state.nextThreeDotIndex);
+        return {
+            pool: 'three_dot',
+            threeDotIndex,
+            threeDotGaps: threeDotGapsAtIndex(localBaseLength, threeDotIndex),
+            source: 'manual',
+        };
+    }
+
+    assertThreeDotIndexAvailable(state.nextThreeDotIndex, localBaseLength);
+    return {
+        pool: 'three_dot',
+        threeDotIndex: state.nextThreeDotIndex,
+        threeDotGaps: threeDotGapsAtIndex(localBaseLength, state.nextThreeDotIndex),
+        source: 'persistent',
+    };
+}
+
 export function resolveDotPosition(
     state: EmailState,
     manualRaw: string | undefined,
     localBaseLength: number
 ): DotSelection {
-    if (manualRaw !== undefined) {
-        const dotPosition = parseManualDotPosition(manualRaw, localBaseLength);
-        assertManualOverrideAllowed(dotPosition, state.nextDotPosition);
-        return { dotPosition, source: 'manual' };
+    const selection = resolveRegistrationAllocation(state, manualRaw, undefined, localBaseLength);
+    if (selection.pool !== 'single_dot') {
+        throw new Error(
+            'All single-dot Gmail variants have already been consumed. Migrate state and allocate from the three-dot pool.'
+        );
     }
+    return { dotPosition: selection.dotPosition, source: selection.source };
+}
 
-    assertPositionAvailable(state.nextDotPosition, localBaseLength);
-    return { dotPosition: state.nextDotPosition, source: 'persistent' };
+export function previewNextRegistrationAliases(
+    state: EmailState,
+    localBase: string,
+    domain: string,
+    count: number
+): string[] {
+    if (!Number.isInteger(count) || count < 1) {
+        throw new Error('previewNextRegistrationAliases count must be a positive integer');
+    }
+    const preview: string[] = [];
+    let virtual = { ...state };
+
+    for (let i = 0; i < count; i++) {
+        const selection = resolveRegistrationAllocation(
+            virtual,
+            undefined,
+            undefined,
+            localBase.length
+        );
+        if (selection.pool === 'single_dot') {
+            preview.push(buildEmail(localBase, domain, selection.dotPosition));
+            virtual = {
+                ...virtual,
+                nextDotPosition: selection.dotPosition + 1,
+                highWaterMark: Math.max(virtual.highWaterMark, selection.dotPosition + 1),
+            };
+            if (isSingleDotPoolExhausted(virtual, localBase.length)) {
+                virtual = {
+                    ...virtual,
+                    allocationPool: 'three_dot',
+                };
+            }
+        } else {
+            preview.push(buildThreeDotEmailFromIndex(localBase, domain, selection.threeDotIndex));
+            const nextIndex = selection.threeDotIndex + 1;
+            virtual = {
+                ...virtual,
+                allocationPool: 'three_dot',
+                nextThreeDotIndex: nextIndex,
+                threeDotHighWaterMark: Math.max(virtual.threeDotHighWaterMark, nextIndex),
+            };
+        }
+    }
+    return preview;
 }
 
 function basePendingFields(
-    dotPosition: number,
     email: string,
     runId: string
-): Omit<PendingVerification, 'phase' | 'startedAt'> & { startedAt: string } {
+): Omit<PendingVerification, 'phase' | 'startedAt' | 'allocationPool'> & { startedAt: string } {
     return {
-        dotPosition,
         email,
         runId,
         hostname: os.hostname(),
@@ -614,7 +990,7 @@ export function persistPendingSelected(
     statePath: string,
     localBase: string,
     domain: string,
-    dotPosition: number,
+    selection: RegistrationAllocationSelection,
     email: string,
     runId: string
 ): void {
@@ -627,12 +1003,42 @@ export function persistPendingSelected(
         );
     }
 
-    const pending: PendingVerification = {
-        ...basePendingFields(dotPosition, email, runId),
-        phase: 'selected',
-    };
+    const pending: PendingVerification =
+        selection.pool === 'single_dot'
+            ? {
+                  ...basePendingFields(email, runId),
+                  allocationPool: 'single_dot',
+                  dotPosition: selection.dotPosition,
+                  phase: 'selected',
+              }
+            : {
+                  ...basePendingFields(email, runId),
+                  allocationPool: 'three_dot',
+                  threeDotIndex: selection.threeDotIndex,
+                  threeDotGaps: selection.threeDotGaps,
+                  phase: 'selected',
+              };
 
     writeEmailStateAtomic(statePath, { ...current, pendingVerification: pending });
+}
+
+/** @deprecated Use persistPendingSelected with RegistrationAllocationSelection */
+export function persistPendingSelectedAtDotPosition(
+    statePath: string,
+    localBase: string,
+    domain: string,
+    dotPosition: number,
+    email: string,
+    runId: string
+): void {
+    persistPendingSelected(
+        statePath,
+        localBase,
+        domain,
+        { pool: 'single_dot', dotPosition, source: 'persistent' },
+        email,
+        runId
+    );
 }
 
 export function persistApplicationSubmitPending(
@@ -733,32 +1139,64 @@ export function commitEmailConsumed(
         allowUnresolvedPending: true,
     });
     const pending = current.pendingVerification;
-    if (
-        !pending ||
-        pending.runId !== runId ||
-        pending.phase !== 'otp_submitted' ||
-        pending.dotPosition !== dotPosition
-    ) {
+    if (!pending || pending.runId !== runId || pending.phase !== 'otp_submitted') {
         throw new Error(
             'Internal error: expected otp_submitted pending for this run before consumption commit'
         );
     }
 
-    const newNext = Math.max(
-        current.nextDotPosition,
-        current.highWaterMark,
-        dotPosition + 1
-    );
+    if (pending.allocationPool === 'three_dot') {
+        if (
+            typeof pending.threeDotIndex !== 'number' ||
+            (dotPosition !== undefined && dotPosition !== pending.threeDotIndex)
+        ) {
+            throw new Error(
+                'Internal error: three-dot consumption commit requires matching threeDotIndex on pending record'
+            );
+        }
+        const consumedIndex = pending.threeDotIndex;
+        const newThreeNext = Math.max(
+            current.nextThreeDotIndex,
+            current.threeDotHighWaterMark,
+            consumedIndex + 1
+        );
+        writeEmailStateAtomic(statePath, {
+            ...current,
+            allocationPool: 'three_dot',
+            nextThreeDotIndex: newThreeNext,
+            threeDotHighWaterMark: newThreeNext,
+            pendingVerification: null,
+        });
+        console.log(
+            `Email consumed at three-dot index ${consumedIndex}. Saved nextThreeDotIndex=${newThreeNext} to ${statePath}`
+        );
+        return;
+    }
+
+    if (
+        typeof pending.dotPosition !== 'number' ||
+        (dotPosition !== undefined && dotPosition !== pending.dotPosition)
+    ) {
+        throw new Error(
+            'Internal error: expected matching dotPosition on pending record before consumption commit'
+        );
+    }
+    const consumedDot = pending.dotPosition;
+    const newNext = Math.max(current.nextDotPosition, current.highWaterMark, consumedDot + 1);
+    const singleExhausted = newNext >= localBase.length;
 
     writeEmailStateAtomic(statePath, {
         ...current,
         nextDotPosition: newNext,
         highWaterMark: newNext,
+        allocationPool: singleExhausted ? 'three_dot' : current.allocationPool,
+        nextThreeDotIndex: singleExhausted ? current.nextThreeDotIndex : 0,
+        threeDotHighWaterMark: singleExhausted ? current.threeDotHighWaterMark : 0,
         pendingVerification: null,
     });
 
     console.log(
-        `Email consumed at position ${dotPosition}. Saved nextDotPosition=${newNext} to ${statePath}`
+        `Email consumed at position ${consumedDot}. Saved nextDotPosition=${newNext} to ${statePath}`
     );
 }
 

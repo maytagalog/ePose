@@ -1,0 +1,12 @@
+<testsuites id="" name="" tests="1" failures="0" skipped="0" errors="0" time="0.480355">
+<testsuite name="e2e/smokePart1Reporting.junit.spec.ts" timestamp="2026-11-15T06:38:05.546Z" hostname="chromium" tests="1" failures="0" skipped="0" time="0.001" errors="0">
+<testcase name="synthetic Part 1 run started and completed for JUnit system-out" classname="e2e/smokePart1Reporting.junit.spec.ts" time="0.001">
+<system-out>
+<![CDATA[PART1_RUN_STARTED {"smokePart":1,"environment":"staging","accountEmail":"synthetic-allocated@example.com","accountSource":"new_registration","activeCoverage":["Registration","Login","Online Booking and confirmation email","Logout","Forgot Password","Customer Add/Edit/Delete","My Page Profile (Furigana)","Change Email","Change Password","Company Information","Display Item Settings","Credit-card Plan Purchase and Payment History","Referral Coupon Email","Withdrawal"],"deferredCoverage":["Posture Analysis","Referral Coupon Copy"],"deferredReasons":{"Posture Analysis":"outside Part 1 scope","Referral Coupon Copy":"pending product issue"}}
+PART1_FORGOT_PASSWORD_VERIFIED {"accountEmail":"synthetic-allocated@example.com","resetSuccessVerified":true,"loginAfterResetVerified":true,"customersVisibleVerified":true}
+PART1_RUN_COMPLETED {"smokePart":1,"environment":"staging","registrationEmail":"synthetic-allocated@example.com","finalAccountEmail":"synthetic-changed@example.com","accountWithdrawn":true,"finalOrigin":"https://app-stg.epose.com","finalPathname":"/login"}
+]]>
+</system-out>
+</testcase>
+</testsuite>
+</testsuites>

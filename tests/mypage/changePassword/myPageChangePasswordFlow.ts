@@ -11,6 +11,7 @@ import {
     performChangePasswordOtpRequestBoundary,
 } from './changePasswordFlowBoundaries';
 import type { SmokeAccountRef } from '../changeEmail/myPageChangeEmailFlow';
+import { newStagingSmokeBrowserContextOptions } from '../../e2e/shared/stagingSmokeBrowserContext';
 import {
     assertMyPageSignedInEmail,
     myPageReadOnlyPathname,
@@ -128,10 +129,15 @@ export async function assertChangeNewPasswordFormReady(page: Page): Promise<void
     });
 }
 
-async function submitChangeNewPasswordOnce(
+export type SubmitChangeNewPasswordOptions = {
+    submitButton?: { name: string | RegExp; exact?: boolean };
+};
+
+export async function submitChangeNewPasswordOnce(
     page: Page,
     otpCode: string,
-    newPassword: string
+    newPassword: string,
+    options?: SubmitChangeNewPasswordOptions
 ): Promise<void> {
     const otpInput = page.locator('input[type="text"]');
     await otpInput.fill(otpCode);
@@ -141,7 +147,11 @@ async function submitChangeNewPasswordOnce(
     await passwordFields.nth(1).fill(newPassword);
     await expect(passwordFields.first()).toHaveValue(newPassword);
     await expect(passwordFields.nth(1)).toHaveValue(newPassword);
-    const sendButton = page.getByRole('button', { name: /送\s*信/ });
+    const submit = options?.submitButton ?? { name: /送\s*信/ };
+    const sendButton =
+        submit.exact === true && typeof submit.name === 'string'
+            ? page.getByRole('button', { name: submit.name, exact: true })
+            : page.getByRole('button', { name: submit.name });
     await expect(sendButton).toBeEnabled({ timeout: ACTION_TIMEOUT_MS });
     await sendButton.click();
 }
@@ -179,7 +189,7 @@ export async function verifyAccountWithNewPasswordInFreshContext(
     browser: Browser,
     account: SmokeAccountRef
 ): Promise<void> {
-    const context = await browser.newContext();
+    const context = await browser.newContext(newStagingSmokeBrowserContextOptions());
     const page = await context.newPage();
     try {
         await login(page, { email: account.email, password: account.password });

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="ja" id="html-root">
+<head>
+  <meta charset="utf-8" />
+  <title>Analysis Report Share QR fixture</title>
+  <style>
+    [hidden]{display:none!important}
+    #share-qr-dialog-root .ant-modal-wrap {
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+    }
+    #share-qr-dialog-root .ant-modal {
+      position: relative;
+      width: min(360px, 90vw);
+      margin: 80px auto;
+      background: #fff;
+      min-height: 120px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+    #share-qr-dialog-root.arv-share-qr-root-no-box {
+      position: fixed;
+      left: 0;
+      top: 0;
+      width: 0;
+      height: 0;
+      overflow: visible;
+    }
+  </style>
+</head>
+<body>
+  <header id="report-header" data-testid="analysis-report-header" hidden>
+    <div data-testid="analysis-report-header-field" data-field="name">Fixture Customer</div>
+    <div data-testid="analysis-report-header-field" data-field="height" data-value="170">170cm</div>
+    <div data-testid="analysis-report-header-field" data-field="age" data-value="30">30</div>
+    <div data-testid="analysis-report-header-field" data-field="sex" data-value="male">男性</div>
+    <div
+      data-testid="analysis-report-header-field"
+      data-field="measuredAt"
+      data-value="2026-03-13T08:22:38.000Z"
+    >2026.03.13 08:22</div>
+  </header>
+
+  <article
+    id="report-root"
+    data-testid="analysis-report"
+    data-load-state="ready"
+    data-customer-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    data-analysis-id="cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+  >
+    <div data-testid="analysis-report-summary">Fixture summary text</div>
+    <div data-testid="analysis-report-score">72</div>
+    <button
+      type="button"
+      id="report-actions-toggle"
+      data-testid="analysis-report-actions-toggle"
+      aria-expanded="false"
+      aria-controls="report-actions-menu"
+    >actions</button>
+    <div id="report-actions-menu" data-testid="analysis-report-actions-menu" data-report-view="single" hidden>
+      <div data-testid="analysis-report-share-qr-open" role="presentation">QRコードで共有</div>
+    </div>
+  </article>
+
+  <div
+    id="share-qr-dialog-root"
+    data-testid="analysis-report-share-qr-dialog"
+    class="arv-share-qr-modal-root"
+    hidden
+  >
+    <div class="ant-modal-mask"></div>
+    <div class="ant-modal-wrap">
+      <div class="ant-modal" role="dialog" aria-modal="true">
+        <div class="ant-modal-content">
+          <div class="ant-modal-body">
+            <p>Share QR fixture placeholder</p>
+          </div>
+          <div class="ant-modal-footer">
+            <button type="button" data-testid="analysis-report-share-qr-close"><span>とじる</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    window.__arvShareQrFailsOpen = window.__arvShareQrFailsOpen ?? false;
+    window.__arvShareQrCloseFails = window.__arvShareQrCloseFails ?? false;
+    window.__arvShareQrRootNoBoundingBox = window.__arvShareQrRootNoBoundingBox ?? true;
+
+    const reportRoot = document.getElementById('report-root');
+    const reportHeader = document.getElementById('report-header');
+    const actionsToggle = document.getElementById('report-actions-toggle');
+    const actionsMenu = document.getElementById('report-actions-menu');
+    const qrRoot = document.getElementById('share-qr-dialog-root');
+    const qrClose = qrRoot.querySelector('[data-testid="analysis-report-share-qr-close"]');
+
+    reportHeader.hidden = false;
+
+    actionsToggle.addEventListener('click', () => {
+      const willOpen = actionsMenu.hidden;
+      actionsMenu.hidden = !willOpen;
+      actionsToggle.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    });
+
+    document.querySelector('[data-testid="analysis-report-share-qr-open"]').addEventListener('click', () => {
+      actionsMenu.hidden = true;
+      actionsToggle.setAttribute('aria-expanded', 'false');
+      if (window.__arvShareQrFailsOpen) {
+        return;
+      }
+      qrRoot.hidden = false;
+      if (window.__arvShareQrRootNoBoundingBox) {
+        qrRoot.classList.add('arv-share-qr-root-no-box');
+      }
+    });
+
+    qrClose.addEventListener('click', () => {
+      if (window.__arvShareQrCloseFails) {
+        return;
+      }
+      qrRoot.hidden = true;
+    });
+  </script>
+</body>
+</html>

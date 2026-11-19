@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>CIRS Handover fixture</title>
+</head>
+<body>
+  <main role="main">
+    <div
+      id="record-detail"
+      data-testid="cirs-record-detail"
+      data-customer-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+      data-customer-service-id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    >
+      <section data-testid="cirs-handover-section" data-load-state="loading">
+        <button type="button" data-testid="cirs-handover-create">新規引き継ぎ</button>
+        <button type="button" data-testid="cirs-handover-list-open">一覧</button>
+        <div id="handover-preview-items"></div>
+      </section>
+    </div>
+
+    <div id="handover-modal" role="dialog" aria-modal="true" hidden>
+      <div id="handover-modal-body">
+        <div id="handover-editor" data-testid="cirs-handover-editor">
+          <input type="date" data-testid="cirs-handover-date" />
+          <select data-testid="cirs-handover-assignee"><option value="a">Assignee</option></select>
+          <textarea data-testid="cirs-handover-content"></textarea>
+        </div>
+      </div>
+      <footer id="handover-modal-footer">
+        <button type="button" data-testid="cirs-handover-submit" disabled hidden>投稿</button>
+        <button type="button" data-testid="cirs-handover-update" disabled hidden>更新</button>
+        <button type="button" data-testid="cirs-handover-delete" hidden>削除</button>
+      </footer>
+    </div>
+
+    <div
+      id="handover-list-panel"
+      data-testid="cirs-handover-list"
+      data-load-state="loading"
+      hidden
+    >
+      <button type="button" data-testid="cirs-handover-back">back</button>
+      <div id="handover-list-items"></div>
+      <p data-testid="cirs-handover-empty" hidden>empty</p>
+    </div>
+
+    <div id="operation-success" data-testid="operation-success" data-entity-type="handover" data-operation="" hidden
+      style="position: fixed; top: 12px; right: 12px; padding: 8px 12px; background: #e6f4ea; border: 1px solid #137333;">success</div>
+  </main>
+  <script>
+    window.__toFailCreate = window.__toFailCreate ?? false;
+    window.__toFailUpdate = window.__toFailUpdate ?? false;
+    window.__toFailDelete = window.__toFailDelete ?? false;
+    window.__toWrongEditorHandoverId = window.__toWrongEditorHandoverId ?? false;
+    window.__toSkipPreviewAfterCreate = window.__toSkipPreviewAfterCreate ?? false;
+    window.__toRetainItemAfterDelete = window.__toRetainItemAfterDelete ?? false;
+    window.__toSeedHandoverIds = window.__toSeedHandoverIds ?? null;
+    window.__toPreviewLoadError = window.__toPreviewLoadError ?? false;
+    window.__toListLoadError = window.__toListLoadError ?? false;
+    window.__toStuckPreviewLoading = window.__toStuckPreviewLoading ?? false;
+
+    const CUSTOMER_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const RECORD_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const PRE_EXISTING_1 = '208';
+    const PRE_EXISTING_2 = '209';
+
+    const storageMetaKey = 'cirs-handover-fixture-active-key';
+    function resolveStorageKey() {
+      const persisted = sessionStorage.getItem(storageMetaKey);
+      if (persisted) return persisted;
+      const created = 'cirs-handover-fixture-v1';
+      sessionStorage.setItem(storageMetaKey, created);
+      return created;
+    }
+    const storageKey = resolveStorageKey();
+
+    const recordDetail = document.getElementById('record-detail');
+    const handoverSection = document.querySelector('[data-testid="cirs-handover-section"]');
+    const previewHost = document.getElementById('handover-preview-items');
+    const modal = document.getElementById('handover-modal');
+    const editor = document.getElementById('handover-editor');
+    const contentInput = document.querySelector('[data-testid="cirs-handover-content"]');
+    const submitBtn = document.querySelector('[data-testid="cirs-handover-submit"]');
+    const updateBtn = document.querySelector('[data-testid="cirs-handover-update"]');
+    const deleteBtn = document.querySelector('[data-testid="cirs-handover-delete"]');
+    const createBtn = document.querySelector('[data-testid="cirs-handover-create"]');
+    const listPanel = document.getElementById('handover-list-panel');
+    const listItemsHost = document.getElementById('handover-list-items');
+    const emptyState = document.querySelector('[data-testid="cirs-handover-empty"]');
+    const toast = document.getElementById('operation-success');
+
+    function setPreviewLoadState(state) {
+      handoverSection.setAttribute('data-load-state', state);
+    }
+
+    function setListLoadState(state) {
+      listPanel.setAttribute('data-load-state', state);
+    }
+
+    function loadHandovers() {
+      try { return JSON.parse(sessionStorage.getItem(storageKey) || '[]'); } catch { return []; }
+    }
+    function saveHandovers(rows) { sessionStorage.setItem(storageKey, JSON.stringify(rows)); }
+
+    function parseNumericHandoverId(value) {
+      if (typeof value !== 'string' || !/^\d+$/.test(value)) return null;
+      return parseInt(value, 10);
+    }
+
+    function allocateHandoverId(rows) {
+      let maxId = 207;
+      rows.forEach(function (row) {
+        const parsed = parseNumericHandoverId(row.handoverId);
+        if (parsed !== null && parsed > maxId) maxId = parsed;
+      });
+      return String(maxId + 1);
+    }
+
+    function seedPreExisting() {
+      if (sessionStorage.getItem(storageKey) !== null) return;
+      const seedIds = window.__toSeedHandoverIds || [PRE_EXISTING_1, PRE_EXISTING_2];
+      saveHandovers(seedIds.map(function (id) {
+        return {
+          handoverId: String(id),
+          customerServiceId: RECORD_ID,
+          contents: 'seed-' + id,
+          displayDate: '2026-10-01',
+          author: 'Seed Author',
+        };
+      }));
+    }
+
+    function appendHandoverRowFields(parent, row) {
+      const dateEl = document.createElement('time');
+      dateEl.textContent = row.displayDate || '2026-10-30';
+      const contentEl = document.createElement('p');
+      contentEl.textContent = row.contents;
+      const authorEl = document.createElement('span');
+      authorEl.textContent = row.author || 'Fixture Author';
+      parent.appendChild(dateEl);
+      parent.appendChild(contentEl);
+      parent.appendChild(authorEl);
+    }
+
+    function renderPreviewItems() {
+      setPreviewLoadState('loading');
+      if (window.__toPreviewLoadError) {
+        setPreviewLoadState('error');
+        return;
+      }
+      if (window.__toStuckPreviewLoading) {
+        return;
+      }
+      previewHost.innerHTML = '';
+      loadHandovers().forEach(function (row) {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.setAttribute('data-testid', 'cirs-handover-item');
+        item.setAttribute('data-handover-id', row.handoverId);
+        item.setAttribute('data-customer-service-id', row.customerServiceId);
+        appendHandoverRowFields(item, row);
+        item.addEventListener('click', function () { openEditEditor(row.handoverId); });
+        previewHost.appendChild(item);
+      });
+      setPreviewLoadState('loaded');
+    }
+
+    function renderFullListItems() {
+      setListLoadState('loading');
+      if (window.__toListLoadError) {
+        setListLoadState('error');
+        return;
+      }
+      listItemsHost.innerHTML = '';
+      const rows = loadHandovers();
+      if (rows.length === 0) {
+        emptyState.hidden = false;
+      } else {
+        emptyState.hidden = true;
+        rows.forEach(function (row) {
+          const item = document.createElement('div');
+          item.setAttribute('data-testid', 'cirs-handover-item');
+          item.setAttribute('data-handover-id', row.handoverId);
+          item.setAttribute('data-customer-service-id', row.customerServiceId);
+          appendHandoverRowFields(item, row);
+          listItemsHost.appendChild(item);
+        });
+      }
+      setListLoadState('loaded');
+    }
+
+    function showToast(operation) {
+      toast.setAttribute('data-operation', operation);
+      toast.setAttribute('data-entity-type', 'handover');
+      toast.hidden = false;
+      setTimeout(function () { toast.hidden = true; toast.setAttribute('data-operation', ''); }, 5000);
+    }
+
+    let editBaselineContent = '';
+
+    function syncCreateSubmitEnabled() {
+      if (submitBtn.hidden) return;
+      submitBtn.disabled = contentInput.value.trim().length === 0;
+    }
+
+    function syncEditFooterEnabled() {
+      if (updateBtn.hidden) return;
+      updateBtn.disabled = contentInput.value === editBaselineContent;
+    }
+
+    function closeEditor() {
+      modal.hidden = true;
+      editor.removeAttribute('data-handover-id');
+      recordDetail.hidden = false;
+      listPanel.hidden = true;
+    }
+
+    function openCreateEditor() {
+      recordDetail.hidden = false;
+      listPanel.hidden = true;
+      modal.hidden = false;
+      editor.removeAttribute('data-handover-id');
+      contentInput.value = '';
+      submitBtn.hidden = false;
+      updateBtn.hidden = true;
+      deleteBtn.hidden = true;
+      editBaselineContent = '';
+      syncCreateSubmitEnabled();
+    }
+
+    function openEditEditor(handoverId) {
+      const row = loadHandovers().find(function (r) { return r.handoverId === handoverId; });
+      modal.hidden = false;
+      editor.setAttribute('data-handover-id', window.__toWrongEditorHandoverId ? 'wrong-handover-id' : handoverId);
+      editBaselineContent = row ? row.contents : '';
+      contentInput.value = editBaselineContent;
+      submitBtn.hidden = true;
+      updateBtn.hidden = false;
+      deleteBtn.hidden = false;
+      updateBtn.disabled = true;
+      deleteBtn.disabled = false;
+    }
+
+    function returnToRecordFromList() {
+      listPanel.hidden = true;
+      recordDetail.hidden = false;
+      renderPreviewItems();
+    }
+
+    createBtn.addEventListener('click', openCreateEditor);
+
+    contentInput.addEventListener('input', function () {
+      syncCreateSubmitEnabled();
+      syncEditFooterEnabled();
+    });
+
+    document.querySelector('[data-testid="cirs-handover-list-open"]').addEventListener('click', function () {
+      recordDetail.hidden = true;
+      modal.hidden = true;
+      listPanel.hidden = false;
+      renderFullListItems();
+    });
+
+    document.querySelector('[data-testid="cirs-handover-back"]').addEventListener('click', returnToRecordFromList);
+
+    document.querySelector('[data-testid="cirs-handover-submit"]').addEventListener('click', function () {
+      if (window.__toFailCreate) return;
+      const rows = loadHandovers();
+      const handoverId = allocateHandoverId(rows);
+      rows.push({
+        handoverId: handoverId,
+        customerServiceId: RECORD_ID,
+        contents: contentInput.value,
+        displayDate: '2026-11-02',
+        author: 'Fixture Author',
+      });
+      saveHandovers(rows);
+      closeEditor();
+      if (!window.__toSkipPreviewAfterCreate) {
+        renderPreviewItems();
+      }
+      showToast('create');
+    });
+
+    document.querySelector('[data-testid="cirs-handover-update"]').addEventListener('click', function () {
+      if (window.__toFailUpdate) return;
+      const handoverId = editor.getAttribute('data-handover-id') || '';
+      const rows = loadHandovers();
+      const idx = rows.findIndex(function (r) { return r.handoverId === handoverId; });
+      if (idx >= 0) {
+        rows[idx].contents = contentInput.value;
+        saveHandovers(rows);
+      }
+      showToast('update');
+      closeEditor();
+      renderPreviewItems();
+    });
+
+    document.querySelector('[data-testid="cirs-handover-delete"]').addEventListener('click', function () {
+      if (window.__toFailDelete) return;
+      const handoverId = editor.getAttribute('data-handover-id') || '';
+      window.__deletedHandoverId = handoverId;
+      if (!window.__toRetainItemAfterDelete) {
+        saveHandovers(loadHandovers().filter(function (r) { return r.handoverId !== handoverId; }));
+      }
+      showToast('delete');
+      closeEditor();
+      renderPreviewItems();
+    });
+
+    seedPreExisting();
+    renderPreviewItems();
+    window.history.replaceState({}, '', '/customers/' + CUSTOMER_ID + '/interaction-records/' + RECORD_ID);
+    window.addEventListener('pageshow', function () { renderPreviewItems(); });
+  </script>
+</body>
+</html>

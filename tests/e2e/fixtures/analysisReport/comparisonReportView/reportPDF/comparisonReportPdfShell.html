@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>Comparison Report PDF fixture</title>
+  <style>
+    [hidden] { display: none !important; }
+    .fixture-sticky-header { position: fixed; top: 0; left: 0; right: 0; height: 64px; z-index: 1000; background: #fff; border: 1px solid #eee; display: flex; align-items: center; padding: 0 16px; }
+    body { margin: 0; padding-top: 64px; }
+    #comparison-root { min-height: 2400px; }
+    #comparison-root section { min-height: 120px; margin: 24px 0; border: 1px solid #ddd; padding: 8px; }
+    .show-on-print { display: none; }
+    @media print {
+      .show-on-print { display: block !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="ant-layout-header fixture-sticky-header">
+    <span id="fixture-app-banner-name">Nikolas Fixture</span>
+    <span class="fixture-banner-label">（ログイン中の表示名 — not report header）</span>
+  </header>
+  <div id="single-view">
+    <div data-testid="analysis-report" data-analysis-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001" data-customer-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" data-load-state="ready"></div>
+    <button type="button" data-testid="analysis-report-compare-open">比較</button>
+  </div>
+  <div id="comparison-view" hidden>
+    <div id="comparison-page-shell">
+      <div class="comparison-page-chrome">
+        <div class="comparison-title-row">
+          <div>立位姿勢分析レポート（比較）</div>
+          <span role="button" tabindex="0" data-testid="analysis-report-compare-exit">終了</span>
+        </div>
+        <div class="comparison-customer-info">
+          <div class="comparison-customer-field">
+            <div>氏名</div>
+            <div id="comparison-header-customer-name">Nikolas Fixture</div>
+          </div>
+          <div class="comparison-customer-field">
+            <div>身長</div>
+            <div>170cm</div>
+          </div>
+        </div>
+      </div>
+      <div id="fixture-comparison-bottom-nav">Nikolas Fixture 姿勢分析レポート一覧</div>
+      <div id="comparison-root" data-testid="analysis-report-comparison" data-customer-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa">
+      <div class="comparison-report-selector-row">
+        <div class="ant-select ant-select-single">
+          <div class="ant-select-selector" role="combobox" tabindex="0">
+            <span class="ant-select-selection-search">
+              <input type="search" readonly class="ant-select-selection-search-input" data-testid="analysis-report-comparison-selector" data-comparison-slot="left" aria-expanded="false" />
+            </span>
+          </div>
+        </div>
+      </div>
+      <div data-testid="analysis-report-comparison-column" data-comparison-slot="left" data-analysis-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001">
+        <div>2026/02/01 10:30</div>
+        <section><div class="comparison-section-title">立位矢状面</div></section>
+        <section><div class="comparison-section-title">立位前額面</div></section>
+        <section><div class="comparison-section-title">姿勢タイプ</div></section>
+        <section><div class="comparison-section-title">重心位置</div></section>
+      </div>
+      <div data-testid="analysis-report-comparison-column" data-comparison-slot="right" data-analysis-id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2">
+        <div>2026/01/15 09:00</div>
+        <section><div class="comparison-section-title">立位矢状面</div></section>
+        <section><div class="comparison-section-title">立位前額面</div></section>
+        <section><div class="comparison-section-title">姿勢タイプ</div></section>
+        <section><div class="comparison-section-title">重心位置</div></section>
+      </div>
+      <button type="button" data-testid="analysis-report-actions-toggle" id="actions-toggle">menu</button>
+      <div data-testid="analysis-report-actions-menu" data-report-view="comparison" id="actions-menu" hidden>
+        <div data-testid="analysis-report-print">印刷</div>
+      </div>
+      </div>
+      <div id="comparison-options-panel" class="analysis-report-comparison-options-popup" hidden role="listbox" style="position:fixed;top:80px;left:80px;z-index:2000;background:#fff;border:1px solid #ccc;padding:8px;">
+        <div data-testid="analysis-report-comparison-option" data-analysis-id="cccccccc-cccc-4ccc-8ccc-cccccccc0003" role="option">opt</div>
+      </div>
+    </div>
+  </div>
+  <div class="print-wrapper show-on-print">
+    <div>Nikolas Fixture</div>
+    <div>立位姿勢分析レポート（比較）</div>
+    <div>2026/02/01</div>
+    <div>2026/01/15</div>
+  </div>
+  <script>
+    (function () {
+      const flags = window.__crpFlags || {};
+      const single = document.getElementById('single-view');
+      const comparison = document.getElementById('comparison-view');
+      const leftColumn = comparison.querySelector('[data-comparison-slot="left"][data-testid="analysis-report-comparison-column"]');
+      const selectorSurface = comparison.querySelector('.ant-select-selector');
+      const searchInput = comparison.querySelector('[data-testid="analysis-report-comparison-selector"]');
+      const panel = document.getElementById('comparison-options-panel');
+      const menu = document.getElementById('actions-menu');
+      const toggle = document.getElementById('actions-toggle');
+
+      document.querySelector('[data-testid="analysis-report-compare-open"]').addEventListener('click', () => {
+        single.hidden = true;
+        comparison.hidden = false;
+      });
+
+      selectorSurface.addEventListener('click', () => {
+        panel.hidden = false;
+        searchInput.setAttribute('aria-expanded', 'true');
+      });
+
+      panel.addEventListener('click', (ev) => {
+        const opt = ev.target.closest('[data-testid="analysis-report-comparison-option"]');
+        if (!opt) return;
+        leftColumn.setAttribute('data-analysis-id', opt.getAttribute('data-analysis-id') || '');
+        panel.hidden = true;
+        searchInput.setAttribute('aria-expanded', 'false');
+      });
+
+      toggle.addEventListener('click', () => {
+        menu.hidden = !menu.hidden;
+      });
+
+      if (location.pathname.includes('/compare')) {
+        single.hidden = true;
+        comparison.hidden = false;
+        const parts = location.pathname.split('/').filter(Boolean);
+        const reportsIdx = parts.indexOf('reports');
+        if (reportsIdx >= 0 && parts[reportsIdx + 1]) {
+          leftColumn.setAttribute('data-analysis-id', parts[reportsIdx + 1]);
+        }
+      }
+
+      menu.querySelector('[data-testid="analysis-report-print"]').addEventListener('click', () => {
+        menu.hidden = true;
+        if (flags.pairSwapsOnPrint) {
+          leftColumn.setAttribute('data-analysis-id', 'dddddddd-dddd-4ddd-8ddd-dddddddddddd');
+        }
+        const prev = document.title;
+        document.title = '姿勢分析レポート';
+        setTimeout(() => {
+          window.print();
+          document.title = prev;
+        }, flags.fastPrint ? 0 : 50);
+      });
+    })();
+  </script>
+</body>
+</html>

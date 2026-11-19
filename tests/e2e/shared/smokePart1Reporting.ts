@@ -8,6 +8,8 @@ const PART1_ACTIVE_COVERAGE = [
     'Registration',
     'Login',
     'Online Booking and confirmation email',
+    'Logout',
+    'Forgot Password',
     'Customer Add/Edit/Delete',
     'My Page Profile (Furigana)',
     'Change Email',
@@ -47,6 +49,32 @@ export type Part1RunCompletedParams = {
 };
 
 /** After full Part 1 flow succeeds (withdrawal verification included when accountWithdrawn is true). */
+export type Part1ForgotPasswordVerifiedParams = {
+    accountEmail: string;
+    resetSuccessVerified: boolean;
+    loginAfterResetVerified: boolean;
+    customersVisibleVerified: boolean;
+};
+
+export function buildPart1ForgotPasswordVerifiedPayload(
+    params: Part1ForgotPasswordVerifiedParams
+): Record<string, unknown> {
+    return {
+        accountEmail: params.accountEmail.trim(),
+        resetSuccessVerified: params.resetSuccessVerified,
+        loginAfterResetVerified: params.loginAfterResetVerified,
+        customersVisibleVerified: params.customersVisibleVerified,
+    };
+}
+
+/** After forgot-password reset, post-reset login, and customers list readiness (no passwords or OTPs). */
+export function logPart1ForgotPasswordVerified(params: Part1ForgotPasswordVerifiedParams): void {
+    logPart1SmokeEvent(
+        'PART1_FORGOT_PASSWORD_VERIFIED',
+        buildPart1ForgotPasswordVerifiedPayload(params)
+    );
+}
+
 export function logPart1RunCompleted(params: Part1RunCompletedParams): void {
     const location = params.finalPageUrl
         ? sanitizePageLocation(params.finalPageUrl)

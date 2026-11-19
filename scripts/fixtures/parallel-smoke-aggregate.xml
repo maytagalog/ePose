@@ -1,0 +1,8 @@
+<testsuites tests="2" failures="0" time="474.077">
+<testsuite name="e2e/fullE2ESmokePart1.spec.ts" timestamp="2026-11-18T10:52:31.364Z" hostname="chromium" tests="1" failures="0" time="464.749">
+<testcase name="fullE2ESmokePart1" classname="e2e/fullE2ESmokePart1.spec.ts" time="464.749"></testcase>
+</testsuite>
+<testsuite name="e2e/fullE2ESmokePart2.spec.ts" timestamp="2026-11-18T10:52:31.364Z" hostname="chromium" tests="1" failures="0" time="383.208">
+<testcase name="fullE2ESmokePart2" classname="e2e/fullE2ESmokePart2.spec.ts" time="383.208"></testcase>
+</testsuite>
+</testsuites>

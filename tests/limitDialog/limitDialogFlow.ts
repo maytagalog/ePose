@@ -207,11 +207,11 @@ async function observeAutomaticLimitDialog(
     return 'dismissed';
 }
 
-async function runTriggerLimitDialogCheck(
+export async function runTriggerLimitDialogCheck(
     page: Page,
     trigger: LimitDialogTriggerId,
     clickTrigger: () => Promise<void>,
-    env: LimitDialogEnvironment
+    env: LimitDialogEnvironment = DEFAULT_LIMIT_DIALOG_ENV
 ): Promise<LimitDialogTriggerStatus> {
     await clickTrigger();
     await assertNoUnrestrictedWorkflowEntered(page, trigger);

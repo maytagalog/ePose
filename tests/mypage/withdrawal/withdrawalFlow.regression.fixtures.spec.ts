@@ -3,24 +3,25 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import {
-    PATCH_CANCEL_AUTO_RENEWAL_URL,
-    POST_AUTH_DELETE_ACCOUNT_URL,
     POST_AUTH_LOGIN_URL,
     assertInvalidCredentialsLoginResponse,
     assertRejectedLoginAfterWithdrawal,
     runWithdrawalAndVerify,
+    type WithdrawalFlowOptions,
 } from './withdrawalFlow';
-import { GET_CONTRACT_SUBSCRIPTION_URL } from '../../accountPayment/creditCard/planPurchaseFlow';
-import { AUTH_PROFILE_URL } from '../profile/myPageProfileFlow';
 import type { SmokeAccountRef } from '../changeEmail/myPageChangeEmailFlow';
+import {
+    FIXTURE_ORIGIN,
+    installWithdrawalFixtureOnContext,
+    type FixtureRouteOptions,
+    type WithdrawalFixtureRouteState,
+} from './withdrawalFixtureRoutes';
 
 const e2eFixturesDir = path.join(
     path.dirname(fileURLToPath(import.meta.url)),
     '../../e2e/fixtures'
 );
-const FIXTURE_ORIGIN = 'https://fixture.test';
 const FIXTURE_MY_PAGE = `${FIXTURE_ORIGIN}/my-page`;
-const FIXTURE_CONTRACT = `${FIXTURE_ORIGIN}/contract`;
 
 const rejectedLoginBody = {
     errors: [
@@ -29,14 +30,6 @@ const rejectedLoginBody = {
             extensions: { errorCode: 'InvalidParameter', statusCode: 401, attempts: 2, durationLockout: 0 },
         },
     ],
-};
-
-type FixtureRouteOptions = {
-    renewalAlreadyDisabled?: boolean;
-    patchFails?: boolean;
-    deleteFails?: boolean;
-    skipLoginRedirect?: boolean;
-    loginStatus?: number;
 };
 
 function activePaidSubscription(cancelAtPeriodEnd: boolean) {
@@ -65,83 +58,35 @@ async function installWithdrawalFixture(
     if (options.skipLoginRedirect) {
         html = html.replace("route('/login');", '// login redirect omitted for regression');
     }
-    let subscriptionBody = structuredClone(
+    const subscriptionBody = structuredClone(
         activePaidSubscription(options.renewalAlreadyDisabled ?? false)
     );
     const counts = { patch: 0, delete: 0, subscriptionGet: 0 };
+    const state: WithdrawalFixtureRouteState = { html, subscriptionBody, counts, options };
 
-    await page.route(`${FIXTURE_ORIGIN}/**`, (route) => {
-        const pathname = new URL(route.request().url()).pathname;
-        if (
-            pathname === '/my-page' ||
-            pathname === '/contract' ||
-            pathname.startsWith('/my-page/unsubscribe') ||
-            pathname === '/login'
-        ) {
-            return route.fulfill({ contentType: 'text/html; charset=utf-8', body: html });
-        }
-        return route.fulfill({ status: 404, body: 'missing' });
-    });
+    await installWithdrawalFixtureOnContext(page.context(), state);
 
-    await page.route(AUTH_PROFILE_URL, async (route) => {
-        if (route.request().method() !== 'POST') {
-            return route.fulfill({ status: 405, body: 'method not allowed' });
-        }
-        await route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify({
-                email: 'fixture@example.com',
-                directorFullName: 'Fixture Director',
-                furiganaFullName: 'フィクスチャ',
-                showingName: 'Fixture User',
-            }),
-        });
-    });
+    return {
+        counts,
+        subscriptionBodyRef: () => subscriptionBody,
+        prepareRejectedLoginContext: (ctx: import('@playwright/test').BrowserContext) =>
+            installWithdrawalFixtureOnContext(ctx, state),
+    };
+}
 
-    await page.route(GET_CONTRACT_SUBSCRIPTION_URL, async (route) => {
-        counts.subscriptionGet += 1;
-        await route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify(subscriptionBody),
-        });
-    });
-
-    await page.route(PATCH_CANCEL_AUTO_RENEWAL_URL, async (route) => {
-        counts.patch += 1;
-        if (options.patchFails) {
-            await route.fulfill({ status: 500, body: 'patch failed' });
-            return;
-        }
-        subscriptionBody = {
-            ...subscriptionBody,
-            current: { ...subscriptionBody.current, cancelAtPeriodEnd: true },
-        };
-        await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
-    });
-
-    await page.route(POST_AUTH_DELETE_ACCOUNT_URL, async (route) => {
-        counts.delete += 1;
-        if (options.deleteFails) {
-            await route.fulfill({ status: 500, body: 'delete failed' });
-            return;
-        }
-        const body = route.request().postDataJSON() as { email?: string };
-        expect(body.email).toBe('fixture@example.com');
-        await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
-    });
-
-    await page.route(POST_AUTH_LOGIN_URL, async (route) => {
-        const status = options.loginStatus ?? 401;
-        await route.fulfill({
-            status,
-            contentType: 'application/json',
-            body: JSON.stringify(status === 401 ? rejectedLoginBody : { errors: [] }),
-        });
-    });
-
-    return { counts, subscriptionBodyRef: () => subscriptionBody };
+function fixtureRunOptions(
+    browser: import('@playwright/test').Browser,
+    fixture: {
+        prepareRejectedLoginContext: (ctx: import('@playwright/test').BrowserContext) => Promise<void>;
+    },
+    extra: Omit<WithdrawalFlowOptions, 'browser' | 'prepareRejectedLoginContext'> = {}
+): WithdrawalFlowOptions {
+    return {
+        pageOrigin: FIXTURE_ORIGIN,
+        browser,
+        prepareRejectedLoginContext: fixture.prepareRejectedLoginContext,
+        ...extra,
+    };
 }
 
 const account: SmokeAccountRef = {
@@ -149,49 +94,55 @@ const account: SmokeAccountRef = {
     password: 'FixturePass1',
 };
 
-test('fixture regression: one PATCH cancel and one DELETE; rejected login body', async ({ page }) => {
+test('fixture regression: one PATCH cancel and one DELETE; rejected login body', async ({
+    page,
+    browser,
+}) => {
     test.setTimeout(120000);
-    const { counts } = await installWithdrawalFixture(page);
+    const fixture = await installWithdrawalFixture(page);
     await page.goto(FIXTURE_MY_PAGE, { waitUntil: 'domcontentloaded' });
 
-    await runWithdrawalAndVerify(page, account, undefined, { pageOrigin: FIXTURE_ORIGIN });
+    await runWithdrawalAndVerify(page, account, undefined, fixtureRunOptions(browser, fixture));
 
-    expect(counts.patch).toBe(1);
-    expect(counts.delete).toBe(1);
+    expect(fixture.counts.patch).toBe(1);
+    expect(fixture.counts.delete).toBe(1);
 });
 
-test('fixture regression: PATCH failure prevents DELETE', async ({ page }) => {
+test('fixture regression: PATCH failure prevents DELETE', async ({ page, browser }) => {
     test.setTimeout(120000);
-    const { counts } = await installWithdrawalFixture(page, { patchFails: true });
+    const fixture = await installWithdrawalFixture(page, { patchFails: true });
     await page.goto(FIXTURE_MY_PAGE, { waitUntil: 'domcontentloaded' });
 
     await expect(
-        runWithdrawalAndVerify(page, account, undefined, { pageOrigin: FIXTURE_ORIGIN })
+        runWithdrawalAndVerify(page, account, undefined, fixtureRunOptions(browser, fixture))
     ).rejects.toThrow(/cancel_auto_renewal|stop-renewal|PATCH/i);
 
-    expect(counts.patch).toBe(1);
-    expect(counts.delete).toBe(0);
+    expect(fixture.counts.patch).toBe(1);
+    expect(fixture.counts.delete).toBe(0);
 });
 
-test('fixture regression: DELETE failure fails flow', async ({ page }) => {
+test('fixture regression: DELETE failure fails flow', async ({ page, browser }) => {
     test.setTimeout(120000);
-    const { counts } = await installWithdrawalFixture(page, { deleteFails: true });
+    const fixture = await installWithdrawalFixture(page, { deleteFails: true });
     await page.goto(FIXTURE_MY_PAGE, { waitUntil: 'domcontentloaded' });
 
     await expect(
-        runWithdrawalAndVerify(page, account, undefined, { pageOrigin: FIXTURE_ORIGIN })
+        runWithdrawalAndVerify(page, account, undefined, fixtureRunOptions(browser, fixture))
     ).rejects.toThrow(/auth\/delete|final-delete|DELETE/i);
 
-    expect(counts.delete).toBe(1);
+    expect(fixture.counts.delete).toBe(1);
 });
 
-test('fixture regression: missing login redirect fails without manual goto', async ({ page }) => {
+test('fixture regression: missing login redirect fails without manual goto', async ({
+    page,
+    browser,
+}) => {
     test.setTimeout(120000);
-    await installWithdrawalFixture(page, { skipLoginRedirect: true });
+    const fixture = await installWithdrawalFixture(page, { skipLoginRedirect: true });
     await page.goto(FIXTURE_MY_PAGE, { waitUntil: 'domcontentloaded' });
 
     await expect(
-        runWithdrawalAndVerify(page, account, undefined, { pageOrigin: FIXTURE_ORIGIN })
+        runWithdrawalAndVerify(page, account, undefined, fixtureRunOptions(browser, fixture))
     ).rejects.toThrow(/login|final-delete|waitForURL/i);
 
     expect(page.url()).not.toMatch(/\/login$/);
@@ -199,30 +150,33 @@ test('fixture regression: missing login redirect fails without manual goto', asy
 
 test('fixture regression: renewalAlreadyDisabled captures fresh subscription GET', async ({
     page,
+    browser,
 }) => {
     test.setTimeout(120000);
-    const { counts, subscriptionBodyRef } = await installWithdrawalFixture(page, {
+    const fixture = await installWithdrawalFixture(page, {
         renewalAlreadyDisabled: true,
     });
-    const beforeGets = counts.subscriptionGet;
+    const beforeGets = fixture.counts.subscriptionGet;
 
-    await runWithdrawalAndVerify(page, account, undefined, {
-        pageOrigin: FIXTURE_ORIGIN,
-        renewalAlreadyDisabled: true,
-    });
+    await runWithdrawalAndVerify(
+        page,
+        account,
+        undefined,
+        fixtureRunOptions(browser, fixture, { renewalAlreadyDisabled: true })
+    );
 
-    expect(subscriptionBodyRef().current.cancelAtPeriodEnd).toBe(true);
-    expect(counts.patch).toBe(0);
-    expect(counts.subscriptionGet).toBeGreaterThan(beforeGets);
+    expect(fixture.subscriptionBodyRef().current.cancelAtPeriodEnd).toBe(true);
+    expect(fixture.counts.patch).toBe(0);
+    expect(fixture.counts.subscriptionGet).toBeGreaterThan(beforeGets);
 });
 
-test('fixture regression: login HTTP 503 is not rejected credentials', async ({ page }) => {
+test('fixture regression: login HTTP 503 is not rejected credentials', async ({ page, browser }) => {
     test.setTimeout(120000);
-    await installWithdrawalFixture(page, { loginStatus: 503 });
+    const fixture = await installWithdrawalFixture(page, { loginStatus: 503 });
     await page.goto(FIXTURE_MY_PAGE, { waitUntil: 'domcontentloaded' });
 
     await expect(
-        runWithdrawalAndVerify(page, account, undefined, { pageOrigin: FIXTURE_ORIGIN })
+        runWithdrawalAndVerify(page, account, undefined, fixtureRunOptions(browser, fixture))
     ).rejects.toThrow(/server error|503/i);
 });
 

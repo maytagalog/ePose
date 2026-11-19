@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>Comparison Report Share Email fixture</title>
+  <style>
+    [hidden] { display: none !important; }
+    .fixture-sticky-header { position: fixed; top: 0; left: 0; right: 0; height: 64px; z-index: 1000; display: flex; align-items: center; padding: 0 16px; background: #fff; border-bottom: 1px solid #eee; }
+    body { margin: 0; padding-top: 64px; }
+    #comparison-root section { min-height: 120px; margin: 24px 0; border: 1px solid #ddd; padding: 8px; }
+    #comparison-root { min-height: 2400px; }
+    .comparison-report-selector-row { margin: 16px 0 24px; max-width: 360px; }
+    .ant-select { width: 100%; font-size: 14px; }
+    .ant-select-selector { position: relative; min-height: 40px; border: 1px solid #d9d9d9; border-radius: 6px; padding: 4px 8px; cursor: pointer; background: #fff; }
+    .ant-select-selection-search-input { width: 100%; height: 32px; border: 0; opacity: 0; pointer-events: none; }
+    .analysis-report-comparison-options-popup { position: fixed; top: 80px; left: 80px; z-index: 2000; background: #fff; border: 1px solid #ccc; padding: 8px; }
+    .comparison-actions-row { margin: 24px 0; }
+    #share-email-dialog-root .ant-modal-wrap { position: fixed; inset: 0; z-index: 3000; display: flex; align-items: flex-start; justify-content: center; padding-top: 96px; }
+    #share-email-dialog-root .ant-modal { background: #fff; min-width: 320px; min-height: 120px; box-shadow: 0 4px 12px rgba(0,0,0,.15); padding: 16px; }
+    #share-email-dialog-root.cre-email-root-no-box { position: fixed; width: 0; height: 0; overflow: visible; }
+    .comparison-section-title { font-weight: 600; }
+    #share-email-success { position: fixed; top: 80px; right: 24px; background: #e6f7f4; padding: 12px 16px; border: 1px solid #00ac97; z-index: 4000; }
+  </style>
+</head>
+<body>
+  <header class="ant-layout-header hide-on-print fixture-sticky-header"><span>ログイン中：</span><span>fixture user</span></header>
+  <div id="single-view">
+    <div data-testid="analysis-report" data-analysis-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001" data-customer-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" data-load-state="ready">
+      <div data-testid="analysis-report-summary">summary</div>
+    </div>
+    <button type="button" data-testid="analysis-report-compare-open">比較</button>
+  </div>
+  <div id="comparison-view" hidden>
+    <div id="comparison-root" data-testid="analysis-report-comparison" data-customer-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa">
+      <div class="comparison-report-selector-row">
+        <div class="ant-select ant-select-single">
+          <div class="ant-select-selector" role="combobox" tabindex="0">
+            <span class="ant-select-selection-search">
+              <input type="search" readonly class="ant-select-selection-search-input" data-testid="analysis-report-comparison-selector" data-comparison-slot="left" aria-expanded="false" />
+            </span>
+          </div>
+        </div>
+      </div>
+      <div data-testid="analysis-report-comparison-column" data-comparison-slot="left" data-analysis-id="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001">
+        <section><div class="comparison-section-title">立位矢状面</div></section>
+        <section><div class="comparison-section-title">立位前額面</div></section>
+        <section><div class="comparison-section-title">姿勢タイプ</div></section>
+        <section><div class="comparison-section-title">重心位置</div></section>
+      </div>
+      <div data-testid="analysis-report-comparison-column" data-comparison-slot="right" data-analysis-id="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2">
+        <section><div class="comparison-section-title">立位矢状面</div></section>
+        <section><div class="comparison-section-title">立位前額面</div></section>
+        <section><div class="comparison-section-title">姿勢タイプ</div></section>
+        <section><div class="comparison-section-title">重心位置</div></section>
+      </div>
+      <div class="comparison-actions-row">
+        <button type="button" id="comparison-actions-toggle" data-testid="analysis-report-actions-toggle" aria-expanded="false">actions</button>
+        <div id="comparison-actions-menu" data-testid="analysis-report-actions-menu" data-report-view="comparison" hidden>
+          <div data-testid="analysis-report-share-email-open">メールで共有</div>
+        </div>
+      </div>
+    </div>
+    <div id="comparison-options-panel" class="analysis-report-comparison-options-popup" hidden role="listbox">
+      <div data-testid="analysis-report-comparison-option" data-analysis-id="cccccccc-cccc-4ccc-8ccc-cccccccc0003" role="option">opt3</div>
+    </div>
+  </div>
+  <div id="share-email-dialog-root" data-testid="analysis-report-share-email-dialog" class="cre-email-root-no-box" hidden>
+    <div class="ant-modal-wrap">
+      <div class="ant-modal" role="dialog" aria-modal="true">
+        <div>姿勢分析レポートをメールで共有する</div>
+        <div id="recipient-block">メールアドレス<br/><br/><span id="recipient-value"></span></div>
+        <button type="button" data-testid="analysis-report-share-email-submit">送信する</button>
+        <button type="button" data-testid="analysis-report-share-email-cancel">キャンセル</button>
+      </div>
+    </div>
+  </div>
+  <div id="share-email-success" data-testid="analysis-report-share-email-success" hidden>送信に成功しました</div>
+  <script>
+    (function () {
+      const flags = window.__creFlags || {};
+      window.__creShareEmailSendCount = 0;
+      const recipient = flags.recipientEmail || 'fixture-recipient@example.com';
+      document.getElementById('recipient-value').textContent = recipient;
+
+      const single = document.getElementById('single-view');
+      const comparison = document.getElementById('comparison-view');
+      const leftColumn = comparison.querySelector('[data-comparison-slot="left"][data-testid="analysis-report-comparison-column"]');
+      const rightColumn = comparison.querySelector('[data-comparison-slot="right"][data-testid="analysis-report-comparison-column"]');
+      const selectorSurface = comparison.querySelector('.ant-select-selector');
+      const searchInput = comparison.querySelector('[data-testid="analysis-report-comparison-selector"]');
+      const panel = document.getElementById('comparison-options-panel');
+      const actionsToggle = document.getElementById('comparison-actions-toggle');
+      const actionsMenu = document.getElementById('comparison-actions-menu');
+      const emailRoot = document.getElementById('share-email-dialog-root');
+      const emailSubmit = emailRoot.querySelector('[data-testid="analysis-report-share-email-submit"]');
+      const emailCancel = emailRoot.querySelector('[data-testid="analysis-report-share-email-cancel"]');
+      const successToast = document.getElementById('share-email-success');
+
+      document.querySelector('[data-testid="analysis-report-compare-open"]').addEventListener('click', () => {
+        single.hidden = true;
+        comparison.hidden = false;
+      });
+
+      function setSelectorExpanded(open) {
+        const value = open ? 'true' : 'false';
+        searchInput.setAttribute('aria-expanded', value);
+        selectorSurface.setAttribute('aria-expanded', value);
+      }
+      selectorSurface.addEventListener('click', () => {
+        panel.hidden = false;
+        setSelectorExpanded(true);
+      });
+      panel.addEventListener('click', (ev) => {
+        const opt = ev.target.closest('[data-testid="analysis-report-comparison-option"]');
+        if (!opt) return;
+        const id = opt.getAttribute('data-analysis-id');
+        if (!id) return;
+        panel.hidden = true;
+        setSelectorExpanded(false);
+        leftColumn.setAttribute('data-analysis-id', id);
+      });
+
+      actionsToggle.addEventListener('click', () => {
+        const open = actionsMenu.hidden;
+        actionsMenu.hidden = !open;
+        actionsToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+
+      actionsMenu.querySelector('[data-testid="analysis-report-share-email-open"]').addEventListener('click', () => {
+        actionsMenu.hidden = true;
+        actionsToggle.setAttribute('aria-expanded', 'false');
+        emailRoot.hidden = false;
+        emailRoot.setAttribute('data-report-view', 'comparison');
+        emailRoot.setAttribute('data-left-analysis-id', leftColumn.getAttribute('data-analysis-id') || '');
+        emailRoot.setAttribute('data-right-analysis-id', rightColumn.getAttribute('data-analysis-id') || '');
+      });
+
+      emailCancel.addEventListener('click', () => {
+        emailRoot.hidden = true;
+      });
+
+      emailSubmit.addEventListener('click', () => {
+        window.__creShareEmailSendCount = (window.__creShareEmailSendCount || 0) + 1;
+        fetch('https://api-stg.epose.com/report/share_report', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}',
+        }).finally(() => {
+          if (flags.sendFails) return;
+          emailRoot.hidden = true;
+          successToast.hidden = false;
+        });
+      });
+    })();
+  </script>
+</body>
+</html>
